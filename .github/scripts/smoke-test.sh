@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke tests one channel the way a developer uses it: creates a project, runs its tests, builds it
-# for the web, and generates code with build_runner, whose analyzer must see dart:ui.
+# for the web (and for macOS on a Mac), and generates code with build_runner, whose analyzer must see dart:ui.
 #
 # Usage: smoke-test.sh <channel>, from the repository root.
 set -euo pipefail
@@ -17,6 +17,12 @@ flutter create --no-pub t
 cd t
 flutter test
 flutter build web
+
+# The macOS build copies FlutterMacOS.framework out of the read only store and thins the copy in
+# place with lipo, which fails unless the copy is writable.
+if [[ $(uname) == Darwin ]]; then
+  flutter build macos --debug
+fi
 
 # A field common to every variant of a freezed union lands on the shared mixin. Its type comes from
 # dart:ui, which build_runner only resolves when the running `dart` sits inside the Flutter tree;

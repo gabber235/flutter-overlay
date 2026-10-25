@@ -176,11 +176,11 @@ The `Update` workflow runs every 12 hours and on demand:
    GitHub holds for pull requests opened by a workflow, and enables auto merge.
 4. The same workflow bumps the pinned nixpkgs in its own pull request (`update/nixpkgs`).
 
-CI builds both channels on Linux (`ubuntu-latest`) and macOS (`macos-latest`, Apple silicon),
-runs `flutter --version`, creates a project, runs `flutter test` and `flutter build web`, and
-generates freezed code with `dart run build_runner build`, failing on any `InvalidType`. When a
-build fails because a patch no longer applies, the pull request stays red and CI opens an issue
-naming the patches.
+CI builds both channels on Linux (`ubuntu-latest`) and macOS (`macos-latest`, Apple silicon), runs
+`flutter --version`, creates a project, runs `flutter test` and `flutter build web` (plus `flutter
+build macos --debug` on macOS), and generates freezed code with `dart run build_runner build`,
+failing on any `InvalidType`. When a build fails because a patch no longer applies, the pull request
+stays red and CI opens an issue naming the patches.
 
 Run the updater locally:
 

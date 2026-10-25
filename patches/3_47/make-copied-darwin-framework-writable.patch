@@ -1,0 +1,43 @@
+Make the copied Darwin framework writable
+
+The Unpack targets copy Flutter.framework and FlutterMacOS.framework out of
+the engine artifacts with `rsync --chmod=Du=rwx,...` and then thin the copy
+in place with lipo. On macOS 15.4 and later /usr/bin/rsync is openrsync,
+which accepts --chmod without applying it, so a copy from the read only Nix
+store stays read only and lipo fails with "Permission denied" (reported as
+"Failed to copy Flutter framework.").
+
+Backported from Flutter 3.50, which runs `chmod -R u+w` on the copy.
+See flutter/flutter#195257 and NixOS/nixpkgs#405066.
+
+--- a/packages/flutter_tools/lib/src/build_system/targets/darwin.dart
++++ b/packages/flutter_tools/lib/src/build_system/targets/darwin.dart
+@@ -57,6 +57,28 @@
+         '${result.stdout}\n---\n${result.stderr}',
+       );
+     }
++    final String copiedPath = environment.outputDir
++        .childDirectory(environment.fileSystem.path.basename(basePath))
++        .path;
++    try {
++      final ProcessResult chmodResult = await environment.processManager.run(<String>[
++        'chmod',
++        '-R',
++        'u+w',
++        copiedPath,
++      ]);
++      if (chmodResult.exitCode != 0) {
++        printXcodeWarning(
++          'Failed to make the framework writable. This may cause the build to '
++          'fail when using lipo.\nError: $copiedPath: ${chmodResult.stderr}',
++        );
++      }
++    } on ProcessException catch (e) {
++      printXcodeWarning(
++        'Failed to make the framework writable. This may cause the build to '
++        'fail when using lipo.\nError: $copiedPath: $e',
++      );
++    }
+   }
+ 
+   /// Verifies and destructively thins the framework binary found at [frameworkBinaryPath]

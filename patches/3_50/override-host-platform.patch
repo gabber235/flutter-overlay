@@ -1,0 +1,20 @@
+diff --git a/packages/flutter_tools/lib/src/base/os.dart b/packages/flutter_tools/lib/src/base/os.dart
+index e38a5196..cb030b49 100644
+--- a/packages/flutter_tools/lib/src/base/os.dart
++++ b/packages/flutter_tools/lib/src/base/os.dart
+@@ -391,7 +391,14 @@ class _MacOSUtils extends _PosixUtils {
+     required super.currentAbi,
+   });
+ 
+-  HostPlatform? _hostPlatform;
++  // sysctl reports build platform characteristics, not host platform characteristics.
++  HostPlatform? _hostPlatform = switch (const String.fromEnvironment('NIX_FLUTTER_HOST_PLATFORM')) {
++    'x86_64-linux' => HostPlatform.linux_x64,
++    'aarch64-linux' => HostPlatform.linux_arm64,
++    'x86_64-darwin' => HostPlatform.darwin_x64,
++    'aarch64-darwin' => HostPlatform.darwin_arm64,
++    String value => throw ArgumentError.value(value, 'NIX_FLUTTER_HOST_PLATFORM', 'Unknown Nix host platform!'),
++  };
+ 
+   @override
+   HostPlatform get defaultHostPlatform {

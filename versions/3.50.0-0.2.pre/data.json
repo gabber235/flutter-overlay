@@ -11,44 +11,44 @@
   "flutterHash": "sha256-TiMa4Cp4gqEqa+LFSya9m+TP4npbVL6WOyCQuBIP//E=",
   "artifactHashes": {
     "android": {
-      "aarch64-darwin": "sha256-x+PRJe/noPnulfLrbfpxkPQDdQ8LFcBwtIkxb1PGBR4=",
-      "aarch64-linux": "sha256-u2n8HljEGcSGdeH9Ks4lh+IpqVf0ksHTtECIvTY+Osc=",
-      "x86_64-linux": "sha256-u2n8HljEGcSGdeH9Ks4lh+IpqVf0ksHTtECIvTY+Osc="
+      "aarch64-darwin": "sha256-1+b9It4Ix3zf/YfGKZ8dHsmnyfRvnr20eHvlat7AZ9I=",
+      "aarch64-linux": "sha256-5UkeIjabzsVDX8I34n2yMA+QfHE4WkM2+QtHIRRXDbc=",
+      "x86_64-linux": "sha256-5UkeIjabzsVDX8I34n2yMA+QfHE4WkM2+QtHIRRXDbc="
     },
     "fuchsia": {
-      "aarch64-darwin": "sha256-KJdcMWOjbNfOFecMma6CMF3M5tRt+XrasLWiXusH84U=",
-      "aarch64-linux": "sha256-KJdcMWOjbNfOFecMma6CMF3M5tRt+XrasLWiXusH84U=",
-      "x86_64-linux": "sha256-KJdcMWOjbNfOFecMma6CMF3M5tRt+XrasLWiXusH84U="
+      "aarch64-darwin": "sha256-yn7xc/AEPlaCyiDsJ0Tgybnei2j1J8CHYhzo42iOHCo=",
+      "aarch64-linux": "sha256-yn7xc/AEPlaCyiDsJ0Tgybnei2j1J8CHYhzo42iOHCo=",
+      "x86_64-linux": "sha256-yn7xc/AEPlaCyiDsJ0Tgybnei2j1J8CHYhzo42iOHCo="
     },
     "ios": {
-      "aarch64-darwin": "sha256-4dhja84jG9MU851wxfQlDPgQe4DOPa7WeoX6MXZ0rOA=",
-      "aarch64-linux": "sha256-4dhja84jG9MU851wxfQlDPgQe4DOPa7WeoX6MXZ0rOA=",
-      "x86_64-linux": "sha256-4dhja84jG9MU851wxfQlDPgQe4DOPa7WeoX6MXZ0rOA="
+      "aarch64-darwin": "sha256-/Joiy4F34j68b9UCz7L++1kHoGnikcKpSgm6QG5YR6I=",
+      "aarch64-linux": "sha256-/Joiy4F34j68b9UCz7L++1kHoGnikcKpSgm6QG5YR6I=",
+      "x86_64-linux": "sha256-/Joiy4F34j68b9UCz7L++1kHoGnikcKpSgm6QG5YR6I="
     },
     "linux": {
-      "aarch64-darwin": "sha256-lLNjOvBU/XUTeI44uQCXudlXo4N75lb+UKNAoVfcrlk=",
-      "aarch64-linux": "sha256-lLNjOvBU/XUTeI44uQCXudlXo4N75lb+UKNAoVfcrlk=",
-      "x86_64-linux": "sha256-lLNjOvBU/XUTeI44uQCXudlXo4N75lb+UKNAoVfcrlk="
+      "aarch64-darwin": "sha256-ZUAvo9z2qoPISuzBScVLyQLK0IPcuX7IgPUYm7Lru7E=",
+      "aarch64-linux": "sha256-ZUAvo9z2qoPISuzBScVLyQLK0IPcuX7IgPUYm7Lru7E=",
+      "x86_64-linux": "sha256-qBf2f8OoyOB41MWvbhjFBMVdegbK/g/mRfLCiiGnwoc="
     },
     "macos": {
-      "aarch64-darwin": "sha256-68T/v31zxz4HnImFFgfmd5agt93yncjvF0pd57ie4AY=",
-      "aarch64-linux": "sha256-68T/v31zxz4HnImFFgfmd5agt93yncjvF0pd57ie4AY=",
-      "x86_64-linux": "sha256-68T/v31zxz4HnImFFgfmd5agt93yncjvF0pd57ie4AY="
+      "aarch64-darwin": "sha256-CiMfzKp5ALUCmuL7+lzcLPcCAl5MPR+b4IRLySAUR1s=",
+      "aarch64-linux": "sha256-CiMfzKp5ALUCmuL7+lzcLPcCAl5MPR+b4IRLySAUR1s=",
+      "x86_64-linux": "sha256-CiMfzKp5ALUCmuL7+lzcLPcCAl5MPR+b4IRLySAUR1s="
     },
     "universal": {
-      "aarch64-darwin": "sha256-Jw3ZrNRmMymPKd4xo3lNwYISDszbb7thCOI2FJmpprY=",
-      "aarch64-linux": "sha256-fXND57XBhYmpKKbKxV8OltMkMXHJuTNAee/t8TAS73A=",
-      "x86_64-linux": "sha256-fXND57XBhYmpKKbKxV8OltMkMXHJuTNAee/t8TAS73A="
+      "aarch64-darwin": "sha256-C8KFdTRnuS1+j3YmIOE/Vg91t4QXNt/mT6S3xvtOLFw=",
+      "aarch64-linux": "sha256-8wAi2tEnCnLME7tmGwr4NK8RkzwNtwR5zgvQ6g5BIvA=",
+      "x86_64-linux": "sha256-wylgq79eXB9COL4ZocHMm5FYz6RQs0Bb9PhXjpvzhmI="
     },
     "web": {
-      "aarch64-darwin": "sha256-3gTf9cBVNWTBpgyfDOb4co31+5PpSMP4yofFNe47eZk=",
-      "aarch64-linux": "sha256-3gTf9cBVNWTBpgyfDOb4co31+5PpSMP4yofFNe47eZk=",
-      "x86_64-linux": "sha256-3gTf9cBVNWTBpgyfDOb4co31+5PpSMP4yofFNe47eZk="
+      "aarch64-darwin": "sha256-/RNzU/kJa6UiNJfuOP3QwKSih8znHqkdnNe695GCiXk=",
+      "aarch64-linux": "sha256-/RNzU/kJa6UiNJfuOP3QwKSih8znHqkdnNe695GCiXk=",
+      "x86_64-linux": "sha256-/RNzU/kJa6UiNJfuOP3QwKSih8znHqkdnNe695GCiXk="
     },
     "windows": {
-      "aarch64-darwin": "sha256-jQeBRYR4c6/XC6gDNl2Z/osO/UA6KphRczT1H9/o67Q=",
-      "aarch64-linux": "sha256-jQeBRYR4c6/XC6gDNl2Z/osO/UA6KphRczT1H9/o67Q=",
-      "x86_64-linux": "sha256-jQeBRYR4c6/XC6gDNl2Z/osO/UA6KphRczT1H9/o67Q="
+      "aarch64-darwin": "sha256-2GgVkz9R1lk4yJXBZPFJpyv0Cgn/G64c9mittymcR5s=",
+      "aarch64-linux": "sha256-2GgVkz9R1lk4yJXBZPFJpyv0Cgn/G64c9mittymcR5s=",
+      "x86_64-linux": "sha256-21bC40TuPya/8wUs5elkJ1xh+k4QsLgZyXYthnr80/4="
     }
   },
   "pubspecLock": {

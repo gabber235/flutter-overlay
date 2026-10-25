@@ -206,15 +206,34 @@ def nixpkgs_source(repo: Path) -> Path:
     return Path(archive["inputs"]["nixpkgs"]["path"])
 
 
-def run_nixpkgs_update(nixpkgs: Path, channel: str, version: str, scratch: Path) -> Path:
+def install_patches(flutter_dir: Path, series_dir: Path, series: str) -> None:
+    """Make a nixpkgs Flutter tree use this repository's patch set for `series`.
+
+    nixpkgs builds a version with its global patches plus versions/<series>/patches. This puts
+    patches/<series> there and drops the global patches it replaces, so the tree applies exactly
+    the patches nix/default.nix applies.
+    """
+    target = flutter_dir / "versions" / series / "patches"
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(series_dir, target)
+    for patch in series_dir.glob("*.patch"):
+        (flutter_dir / "patches" / patch.name).unlink(missing_ok=True)
+
+
+def run_nixpkgs_update(
+    nixpkgs: Path, channel: str, version: str, series_dir: Path, scratch: Path
+) -> Path:
     """Run nixpkgs' update script in a writable copy of `nixpkgs`; return the data.json it wrote.
 
     The script locates nixpkgs with `git rev-parse` and writes into that checkout, so it runs in a
-    scratch copy that is a git repository.
+    scratch copy that is a git repository. The artifact hashes it records come from running the
+    patched `flutter precache`, so the copy carries this repository's patches for the series.
     """
     checkout = scratch / "nixpkgs"
     run(["cp", "-R", str(nixpkgs), str(checkout)])
     run(["chmod", "-R", "u+w", str(checkout)])
+    install_patches(checkout / FLUTTER_DIR, series_dir, series_of(version))
     run(["git", "init", "--quiet"], cwd=checkout)
     run(
         [
@@ -237,18 +256,19 @@ def run_nixpkgs_update(nixpkgs: Path, channel: str, version: str, scratch: Path)
 def update(repo: Repo, channel: str, version: str | None, keep: int) -> dict:
     if version is None:
         version = current_releases(fetch_manifest())[channel]
-    Version.parse(version)
+    series = series_of(version)
+    nixpkgs = nixpkgs_source(repo.root)
+    seeded = seed_series(repo, series, nixpkgs / FLUTTER_DIR / "versions")
     with tempfile.TemporaryDirectory(prefix="flutter-overlay-") as scratch:
-        data = run_nixpkgs_update(nixpkgs_source(repo.root), channel, version, Path(scratch))
+        data = run_nixpkgs_update(nixpkgs, channel, version, repo.patches / series, Path(scratch))
         target = repo.versions / version
         target.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(data, target / "data.json")
-        seeded = seed_series(repo, series_of(version), data.parent.parent)
     removed = prune(repo, keep)
     return {
         "channel": channel,
         "version": version,
-        "series": series_of(version),
+        "series": series,
         "seededFrom": seeded,
         "removed": removed,
     }

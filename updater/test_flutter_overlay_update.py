@@ -9,6 +9,7 @@ from flutter_overlay_update import (
     branch_name,
     current_releases,
     failed_patches,
+    install_patches,
     plan,
     prune,
     releases_to_prune,
@@ -109,6 +110,25 @@ class SeedTest(unittest.TestCase):
         self.assertEqual(
             [p.name for p in (self.repo.patches / "3_50").iterdir()], ["rebased.patch"]
         )
+
+
+class InstallPatchesTest(unittest.TestCase):
+    def test_tree_applies_global_patches_plus_series_with_series_winning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            flutter = root / "flutter"
+            write_patch(flutter / "patches", "global.patch")
+            write_patch(flutter / "patches", "override-host-platform.patch")
+            write_patch(flutter / "versions" / "3_50" / "patches", "stale.patch")
+            series = root / "repo" / "patches" / "3_50"
+            write_patch(series, "override-host-platform.patch")
+            write_patch(series, "disable-auto-update.patch")
+            install_patches(flutter, series, "3_50")
+            self.assertEqual([p.name for p in (flutter / "patches").iterdir()], ["global.patch"])
+            self.assertEqual(
+                sorted(p.name for p in (flutter / "versions" / "3_50" / "patches").iterdir()),
+                ["disable-auto-update.patch", "override-host-platform.patch"],
+            )
 
 
 class PruneTest(unittest.TestCase):

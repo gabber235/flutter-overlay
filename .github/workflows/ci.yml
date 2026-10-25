@@ -17,6 +17,11 @@ permissions:
   contents: read
   issues: write
 
+defaults:
+  run:
+    # An explicit bash adds pipefail, so `nix ... | tee` fails when nix fails.
+    shell: bash
+
 jobs:
   build:
     name: build (${{ matrix.os }})

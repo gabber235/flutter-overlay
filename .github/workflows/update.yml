@@ -18,6 +18,11 @@ concurrency:
   group: update
   cancel-in-progress: false
 
+defaults:
+  run:
+    # An explicit bash adds pipefail, so `nix ... | tee` fails when nix fails.
+    shell: bash
+
 permissions:
   contents: write
   pull-requests: write

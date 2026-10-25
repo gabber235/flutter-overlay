@@ -144,10 +144,11 @@ The `Update` workflow runs every 12 hours and on demand:
 
 1. `updater plan` reads the release manifest and lists each channel whose current release is not
    in `versions/` and has no open update branch.
-2. For each, `updater update` copies the pinned nixpkgs into a scratch directory, runs nixpkgs'
-   `update.py --channel <channel> --version <version>` there, and stores the `data.json` it
-   writes. The first release of a new series gets `patches/<series>` copied from the newest older
-   series. Releases beyond the newest three of their channel are pruned.
+2. For each, `updater update` first gives a new series its `patches/<series>`: nixpkgs' own
+   patches for that series if it has them, otherwise a copy of the newest older series. It then
+   copies the pinned nixpkgs into a scratch directory, swaps in this repository's patch set, runs
+   nixpkgs' `update.py --channel <channel> --version <version>` there, and stores the
+   `data.json` it writes. Releases beyond the newest three of their channel are pruned.
 3. It opens one pull request per release (`update/<channel>-<version>`), dispatches CI on it and
    enables auto merge.
 4. The same workflow bumps the pinned nixpkgs in its own pull request (`update/nixpkgs`).
@@ -185,8 +186,19 @@ git add --intent-to-add . && git diff > "$overlay/patches/$series/disable-auto-u
 `diff` line of the old patch.
 
 To rebase a global nixpkgs patch, write the rebased version into `patches/<series>` under the
-same file name; it then replaces the global one for that series only. Check with
-`nix build .#beta`, push, and CI reruns.
+same file name; it then replaces the global one for that series only.
+
+The artifact hashes in `data.json` come from running the patched `flutter precache`, so they
+depend on the patch set. After changing patches, regenerate the data for every kept release of
+the series, then build and push; CI reruns:
+
+```sh
+nix run .#updater -- update --channel beta --version 3.50.0-0.2.pre
+nix build .#beta
+```
+
+A local build can pass with stale hashes when your store already holds artifacts under the old
+hashes; CI starts from an empty store and catches it.
 
 ### Rebases carried for 3.50
 

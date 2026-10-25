@@ -62,10 +62,18 @@ inputs:
 
 ```nix
 { pkgs, inputs, ... }:
+let
+  flutter = inputs.flutter-overlay.packages.${pkgs.system}.beta;
+in
 {
-  packages = [ inputs.flutter-overlay.packages.${pkgs.system}.beta ];
+  packages = [ flutter ];
+  env.FLUTTER_ROOT = "${flutter.sdk}";
 }
 ```
+
+`FLUTTER_ROOT` tells tools started outside the `flutter` command, such as `dart run build_runner`
+or an IDE, which Flutter SDK to use. `flutter.sdk` is the SDK root, the same store path as the
+package itself. See [SDK layout](#sdk-layout) for why `dart` finds Flutter on its own.
 
 Following your own nixpkgs keeps one nixpkgs in your closure but builds Flutter against it, so the
 binary cache below only hits while your nixpkgs matches the one pinned here. Drop the `follows`
@@ -90,7 +98,22 @@ live there because `packages` may only hold derivations, not nested sets. Each c
 newest three releases.
 
 Every package is the wrapped Flutter SDK, so `flutter` and `dart` are on its `bin`, and it carries
-the usual passthru (`buildFlutterApplication`, `dart`, `engineVersion`).
+the usual passthru (`buildFlutterApplication`, `dart`, `engineVersion`, and `sdk`, the SDK root to
+use as `FLUTTER_ROOT`).
+
+### SDK layout
+
+The SDK is laid out like an upstream Flutter install: `bin/cache/dart-sdk` holds real copies of
+the Dart executables and `bin/dart` points at them. In nixpkgs `bin/cache/dart-sdk` links to the
+standalone Dart SDK, so a running `dart` resolves its own path outside Flutter, and tools that
+locate Flutter from that path miss it. build_runner, for one, looks for dart:ui at
+`bin/cache/pkg/sky_engine` beside the resolved Dart SDK; without it, generators such as freezed
+write `InvalidType` for types like `Color` (see
+[dart-lang/build#3596](https://github.com/dart-lang/build/issues/3596)). The CI smoke test
+(`.github/scripts/smoke-test.sh`) generates a freezed union with a `Color` field on every channel
+to keep this working.
+
+`buildFlutterApplication` keeps building with the nixpkgs layout, as it does in nixpkgs.
 
 ## Channels
 
@@ -154,7 +177,8 @@ The `Update` workflow runs every 12 hours and on demand:
 4. The same workflow bumps the pinned nixpkgs in its own pull request (`update/nixpkgs`).
 
 CI builds both channels on Linux (`ubuntu-latest`) and macOS (`macos-latest`, Apple silicon),
-runs `flutter --version`, creates a project, runs `flutter test` and `flutter build web`. When a
+runs `flutter --version`, creates a project, runs `flutter test` and `flutter build web`, and
+generates freezed code with `dart run build_runner build`, failing on any `InvalidType`. When a
 build fails because a patch no longer applies, the pull request stays red and CI opens an issue
 naming the patches.
 

@@ -48,11 +48,7 @@ jobs:
         run: |
           for channel in stable beta; do
             echo "::group::$channel"
-            nix build ".#$channel" --out-link "$RUNNER_TEMP/$channel"
-            export PATH="$RUNNER_TEMP/$channel/bin:$PATH"
-            flutter --version
-            work="$(mktemp -d)"
-            (cd "$work" && flutter create --no-pub t && cd t && flutter test && flutter build web)
+            .github/scripts/smoke-test.sh "$channel"
             echo "::endgroup::"
           done
 

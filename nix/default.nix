@@ -33,14 +33,57 @@ let
     in
     lib.attrValues global ++ lib.attrValues series;
 
+  # Lays out the wrapped SDK like an upstream Flutter install, so its Dart executables live inside
+  # the Flutter tree.
+  #
+  # nixpkgs links `bin/cache/dart-sdk` to the standalone Dart SDK, so a running `dart` resolves its
+  # own path (`Platform.resolvedExecutable`) outside Flutter. Tools that find Flutter relative to
+  # that path then miss it: build_runner looks for dart:ui at `bin/cache/pkg/sky_engine` next to
+  # the resolved Dart SDK, and without it generators such as freezed write `InvalidType` for types
+  # like `Color` (dart-lang/build#3596). Here `bin/cache/dart-sdk` becomes a directory of links to
+  # the Dart SDK that holds real copies of its executables, and `bin/dart` points at that copy.
+  #
+  # The wrapped SDK is a symlinkJoin whose `postBuild` is already baked into `buildCommand`, so the
+  # layout step extends `buildCommand`. `sdk` points at the result, as it does in nixpkgs.
+  upstreamLayout =
+    wrapped:
+    wrapped.overrideAttrs (
+      finalAttrs: prev: {
+        buildCommand = prev.buildCommand + ''
+          shopt -s dotglob
+          dartSdk=$(readlink --canonicalize "$out/bin/cache/dart-sdk")
+          rm "$out/bin/cache/dart-sdk" "$out/bin/dart"
+          mkdir --parents "$out/bin/cache/dart-sdk/bin"
+          for entry in "$dartSdk"/*; do
+            if [ "''${entry##*/}" != bin ]; then
+              ln --symbolic "$entry" "$out/bin/cache/dart-sdk/"
+            fi
+          done
+          for entry in "$dartSdk"/bin/*; do
+            if [ -f "$entry" ] && [ -x "$entry" ]; then
+              cp "$entry" "$out/bin/cache/dart-sdk/bin/"
+            else
+              ln --symbolic "$entry" "$out/bin/cache/dart-sdk/bin/"
+            fi
+          done
+          ln --symbolic cache/dart-sdk/bin/dart "$out/bin/dart"
+        '';
+        passthru = prev.passthru // {
+          sdk = finalAttrs.finalPackage;
+        };
+      }
+    );
+
   build =
     data:
-    wrapFlutter (
-      mkFlutter (
-        data
-        // {
-          patches = patchesFor data.version;
-        }
+    upstreamLayout (
+      wrapFlutter (
+        mkFlutter (
+          data
+          // {
+            patches = patchesFor data.version;
+          }
+        )
       )
     );
 

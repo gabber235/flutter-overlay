@@ -1,0 +1,75 @@
+name: CI
+
+# Pull requests opened by the update workflow use the GITHUB_TOKEN, which does not trigger
+# `pull_request` runs. The update workflow dispatches this workflow on the update branch instead;
+# its checks land on the branch head, so the pull request shows them and auto merge waits for them.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      BRANCH: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          name: gabber235
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # Pull only until the token exists (and on forks, which get no secrets).
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+
+      - name: Flake checks
+        run: nix flake check --print-build-logs --keep-going 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Smoke test each channel
+        run: |
+          for channel in stable beta; do
+            echo "::group::$channel"
+            nix build ".#$channel" --out-link "$RUNNER_TEMP/$channel"
+            export PATH="$RUNNER_TEMP/$channel/bin:$PATH"
+            flutter --version
+            work="$(mktemp -d)"
+            (cd "$work" && flutter create --no-pub t && cd t && flutter test && flutter build web)
+            echo "::endgroup::"
+          done
+
+      - name: Report patches that no longer apply
+        if: failure() && startsWith(env.BRANCH, 'update/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          nix run .#updater -- classify-build-log "$RUNNER_TEMP/build.log" > "$RUNNER_TEMP/failed" || exit 0
+          title="Patches no longer apply on $BRANCH"
+          if gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number' | grep -q .; then
+            exit 0
+          fi
+          {
+            echo "The build of \`$BRANCH\` on ${{ matrix.os }} failed because these patches no longer apply:"
+            echo
+            sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/failed"
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo "Rebase them in \`patches/<series>\` on the update branch; see the README section on rebasing a patch."
+          } > "$RUNNER_TEMP/body.md"
+          gh issue create --title "$title" --body-file "$RUNNER_TEMP/body.md"

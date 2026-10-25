@@ -1,0 +1,94 @@
+name: Update
+
+on:
+  schedule:
+    - cron: "17 */12 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      releases: ${{ steps.plan.outputs.releases }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - id: plan
+        name: Find channel releases that are not packaged yet
+        run: echo "releases=$(nix run .#updater -- plan --skip-branches-on origin)" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: plan
+    if: needs.plan.outputs.releases != '[]'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.releases) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Package Flutter ${{ matrix.version }}
+        run: nix run .#updater -- update --channel ${{ matrix.channel }} --version ${{ matrix.version }} | tee "$RUNNER_TEMP/summary.json"
+      - id: body
+        name: Describe the change
+        run: |
+          {
+            echo 'body<<EOF'
+            echo "Packages Flutter ${{ matrix.version }}, the current ${{ matrix.channel }} release, from the data nixpkgs' Flutter update script generates."
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/summary.json"
+            echo '```'
+            echo
+            echo "CI builds it on Linux and macOS and this merges automatically when it is green. If a patch no longer applies, CI opens an issue; rebase the patch on this branch."
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+      - id: pr
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: update/${{ matrix.channel }}-${{ matrix.version }}
+          commit-message: "feat(${{ matrix.channel }}): flutter ${{ matrix.version }}"
+          title: "feat(${{ matrix.channel }}): flutter ${{ matrix.version }}"
+          body: ${{ steps.body.outputs.body }}
+          labels: update
+      - name: Run CI and merge when green
+        if: steps.pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run ci.yml --ref "update/${{ matrix.channel }}-${{ matrix.version }}"
+          gh pr merge "${{ steps.pr.outputs.pull-request-number }}" --auto --squash
+
+  nixpkgs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Bump the pinned nixpkgs
+        run: nix flake update nixpkgs
+      - id: pr
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: update/nixpkgs
+          commit-message: "chore(nixpkgs): bump pinned nixpkgs"
+          title: "chore(nixpkgs): bump pinned nixpkgs"
+          body: Moves the pinned nixpkgs to the newest nixpkgs-unstable. CI rebuilds every channel against it; this merges automatically when it is green.
+          labels: update
+      - name: Run CI and merge when green
+        if: steps.pr.outputs.pull-request-operation == 'created' || steps.pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run ci.yml --ref update/nixpkgs
+          gh pr merge "${{ steps.pr.outputs.pull-request-number }}" --auto --squash

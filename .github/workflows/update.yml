@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "17 */12 * * *"
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Package one release of this channel instead of every current release
+        type: choice
+        options: ["", stable, beta]
+        default: ""
+      version:
+        description: Exact version to package with the channel above, for example 3.47.7
+        default: ""
 
 concurrency:
   group: update
@@ -24,7 +33,16 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - id: plan
         name: Find channel releases that are not packaged yet
-        run: echo "releases=$(nix run .#updater -- plan --skip-branches-on origin)" >> "$GITHUB_OUTPUT"
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$CHANNEL" ] && [ -n "$VERSION" ]; then
+            releases="$(jq -cn --arg c "$CHANNEL" --arg v "$VERSION" '[{channel: $c, version: $v}]')"
+          else
+            releases="$(nix run .#updater -- plan --skip-branches-on origin)"
+          fi
+          echo "releases=$releases" >> "$GITHUB_OUTPUT"
 
   release:
     needs: plan
@@ -39,13 +57,16 @@ jobs:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       - name: Package Flutter ${{ matrix.version }}
-        run: nix run .#updater -- update --channel ${{ matrix.channel }} --version ${{ matrix.version }} | tee "$RUNNER_TEMP/summary.json"
+        env:
+          CHANNEL: ${{ matrix.channel }}
+          VERSION: ${{ matrix.version }}
+        run: nix run .#updater -- update --channel "$CHANNEL" --version "$VERSION" | tee "$RUNNER_TEMP/summary.json"
       - id: body
         name: Describe the change
         run: |
           {
             echo 'body<<EOF'
-            echo "Packages Flutter ${{ matrix.version }}, the current ${{ matrix.channel }} release, from the data nixpkgs' Flutter update script generates."
+            echo "Packages Flutter ${{ matrix.version }} (${{ matrix.channel }} channel) from the data nixpkgs' Flutter update script generates."
             echo
             echo '```json'
             cat "$RUNNER_TEMP/summary.json"

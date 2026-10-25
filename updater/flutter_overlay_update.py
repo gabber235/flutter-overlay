@@ -286,7 +286,12 @@ def failed_patches(log: str) -> list[str]:
 
 def run(command: list[str], cwd: Path | None = None, capture: bool = False) -> str:
     result = subprocess.run(
-        command, cwd=cwd, check=True, text=True, stdout=subprocess.PIPE if capture else None
+        command,
+        cwd=cwd,
+        check=True,
+        text=True,
+        # Stdout carries this tool's own result, so commands report on stderr.
+        stdout=subprocess.PIPE if capture else sys.stderr,
     )
     return result.stdout if capture else ""
 

@@ -149,8 +149,8 @@ The `Update` workflow runs every 12 hours and on demand:
    copies the pinned nixpkgs into a scratch directory, swaps in this repository's patch set, runs
    nixpkgs' `update.py --channel <channel> --version <version>` there, and stores the
    `data.json` it writes. Releases beyond the newest three of their channel are pruned.
-3. It opens one pull request per release (`update/<channel>-<version>`), dispatches CI on it and
-   enables auto merge.
+3. It opens one pull request per release (`update/<channel>-<version>`), approves the CI run
+   GitHub holds for pull requests opened by a workflow, and enables auto merge.
 4. The same workflow bumps the pinned nixpkgs in its own pull request (`update/nixpkgs`).
 
 CI builds both channels on Linux (`ubuntu-latest`) and macOS (`macos-latest`, Apple silicon),

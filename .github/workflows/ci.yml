@@ -1,8 +1,5 @@
 name: CI
 
-# Pull requests opened by the update workflow use the GITHUB_TOKEN, which does not trigger
-# `pull_request` runs. The update workflow dispatches this workflow on the update branch instead;
-# its checks land on the branch head, so the pull request shows them and auto merge waits for them.
 on:
   pull_request:
   push:

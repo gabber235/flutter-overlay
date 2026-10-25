@@ -10,7 +10,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.head_ref || github.ref_name }}
+  # Per event: a dispatched run must not cancel the pull_request run of the same branch, whose
+  # checks are the ones the pull request reports.
+  group: ci-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:

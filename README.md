@@ -128,6 +128,13 @@ and `releases_macos.json`, for two channels that are still alive:
 | `dev` | no | Retired by Flutter in 2022. The manifest still lists it, but its last release is from April 2022. |
 | `main` (`master`) | no | Has no release archives or release tags, only a moving branch, so there is nothing reproducible to pin. |
 
+### Known issue: `flutter build macos` on 3.47.x
+
+On macOS 15.4 and later, `flutter build macos` with 3.47.x fails: `/usr/bin/rsync` is openrsync,
+which ignores `--chmod`, so the framework copied out of the read only store stays read only and
+`lipo` cannot thin it ([flutter/flutter#195257](https://github.com/flutter/flutter/issues/195257)).
+Flutter 3.50 contains the fix, so this goes away once stable reaches 3.50; use `beta` until then.
+
 ## Binary cache
 
 CI pushes every build to the public Cachix cache `gabber235`. Add it to `nix.conf`:
@@ -178,7 +185,7 @@ The `Update` workflow runs every 12 hours and on demand:
 
 CI builds both channels on Linux (`ubuntu-latest`) and macOS (`macos-latest`, Apple silicon), runs
 `flutter --version`, creates a project, runs `flutter test` and `flutter build web` (plus `flutter
-build macos --debug` on macOS), and generates freezed code with `dart run build_runner build`,
+build macos --debug` on macOS for 3.50 and later), and generates freezed code with `dart run build_runner build`,
 failing on any `InvalidType`. When a build fails because a patch no longer applies, the pull request
 stays red and CI opens an issue naming the patches.
 

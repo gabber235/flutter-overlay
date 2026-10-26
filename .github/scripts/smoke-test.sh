@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke tests one channel the way a developer uses it: creates a project, runs its tests, builds it
-# for the web (and for macOS on a Mac), and generates code with build_runner, whose analyzer must see dart:ui.
+# for the web (and for macOS on a Mac from 3.50), and generates code with build_runner, whose analyzer must see dart:ui.
 #
 # Usage: smoke-test.sh <channel>, from the repository root.
 set -euo pipefail
@@ -19,8 +19,12 @@ flutter test
 flutter build web
 
 # The macOS build copies FlutterMacOS.framework out of the read only store and thins the copy in
-# place with lipo, which fails unless the copy is writable.
-if [[ $(uname) == Darwin ]]; then
+# place with lipo, which fails unless the copy is writable. Before 3.50, flutter_tools relies on
+# `rsync --chmod` for that, which openrsync (/usr/bin/rsync since macOS 15.4) ignores, so the build
+# fails there (https://github.com/flutter/flutter/issues/195257). Build only on 3.50 and later.
+version=$(flutter --version --machine | sed -n 's/.*"frameworkVersion": *"\([^"]*\)".*/\1/p')
+IFS=. read -r major minor _ <<<"$version"
+if [[ $(uname) == Darwin ]] && ((major > 3 || (major == 3 && minor >= 50))); then
   flutter build macos --debug
 fi
 

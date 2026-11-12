@@ -31,11 +31,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
-      - name: Allow the unprivileged user namespaces the Linux FHS environment needs
-        if: runner.os == 'Linux'
-        # Ubuntu 24.04 restricts them through AppArmor, which stops bubblewrap.
-        run: sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
-
       - name: Flake checks
         run: nix flake check --print-build-logs --keep-going
 

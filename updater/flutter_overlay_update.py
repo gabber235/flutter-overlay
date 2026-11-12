@@ -1,8 +1,10 @@
 """Keeps the Flutter releases in this repository in step with Flutter's release channels.
 
 Flutter publishes every release archive, with its sha256, in one manifest per operating system.
-`update` copies one release's archives from those manifests into `versions/<version>.json`; the
-Nix package fetches the archive for its system from there. Nothing is built.
+`update` copies one release's archives from those manifests into
+`versions/<channel>/<version>.json` and records each channel's newest kept release in
+`versions/channels.json`; the Nix packages fetch the archive for their system from there.
+Nothing is built.
 
 Commands:
   plan     Print a JSON list of {channel, version} releases that are missing.
@@ -22,11 +24,11 @@ from pathlib import Path
 
 MANIFEST_URL = "https://storage.googleapis.com/flutter_infra_release/releases/releases_{os}.json"
 
-# Manifests to read, and the Nix system each (os, dart_sdk_arch) archive runs on. Flutter
-# publishes no archive for aarch64 Linux.
+# Manifests to read, and the Nix system each (os, dart_sdk_arch) archive runs on. Every release
+# needs all of them. Flutter publishes no archive for aarch64 Linux, and nixpkgs dropped
+# x86_64-darwin.
 SYSTEMS = {
     ("macos", "arm64"): "aarch64-darwin",
-    ("macos", "x64"): "x86_64-darwin",
     ("linux", "x64"): "x86_64-linux",
 }
 OPERATING_SYSTEMS = sorted({os for os, _ in SYSTEMS})
@@ -72,12 +74,17 @@ class Repo:
     def versions(self) -> Path:
         return self.root / "versions"
 
-    def releases(self) -> dict[str, str]:
-        """Kept releases as {version: channel}."""
-        return {
-            path.stem: json.loads(path.read_text())["channel"]
-            for path in sorted(self.versions.glob("*.json"))
-        }
+    @property
+    def heads_file(self) -> Path:
+        return self.versions / "channels.json"
+
+    def releases(self) -> set[tuple[str, str]]:
+        """Kept releases as (channel, version)."""
+        return {(path.parent.name, path.stem) for path in self.versions.glob("*/*.json")}
+
+    def heads(self) -> dict[str, str]:
+        """The newest kept release of each channel, as recorded in channels.json."""
+        return json.loads(self.heads_file.read_text()) if self.heads_file.exists() else {}
 
 
 # Reading the manifests
@@ -112,6 +119,9 @@ def release_of(manifests: dict[str, dict], channel: str, version: str) -> dict:
                 )
     if not archives:
         raise SystemExit(f"Flutter's manifests list no {channel} release {version}")
+    missing = sorted(set(SYSTEMS.values()) - set(archives))
+    if missing:
+        raise SystemExit(f"{channel} {version} has no archive for {', '.join(missing)} yet")
     order = list(SYSTEMS.values())
     return {
         "version": version,
@@ -127,34 +137,40 @@ def branch_name(channel: str, version: str) -> str:
     return f"update/{channel}-{version}"
 
 
-def plan(current: dict[str, str], kept: dict[str, str], pending: set[str]) -> list[dict]:
+def plan(current: dict[str, str], kept: set[tuple[str, str]], pending: set[str]) -> list[dict]:
     """Releases to add: each channel's current version unless it is kept or a branch is pending."""
     return [
         {"channel": channel, "version": version}
         for channel, version in current.items()
-        if version not in kept and branch_name(channel, version) not in pending
+        if (channel, version) not in kept and branch_name(channel, version) not in pending
     ]
 
 
-def releases_to_prune(releases: dict[str, str], keep: int) -> list[str]:
-    """Versions beyond the newest `keep` of their channel."""
-    pruned = []
-    for channel in set(releases.values()):
-        versions = sorted(
-            (v for v, c in releases.items() if c == channel), key=Version.parse, reverse=True
-        )
-        pruned.extend(versions[keep:])
-    return sorted(pruned, key=Version.parse)
+def newest_first(releases: set[tuple[str, str]], channel: str) -> list[str]:
+    return sorted((v for c, v in releases if c == channel), key=Version.parse, reverse=True)
+
+
+def releases_to_prune(releases: set[tuple[str, str]], keep: int) -> list[tuple[str, str]]:
+    """Releases beyond the newest `keep` of their channel, in channel order."""
+    return [
+        (channel, version)
+        for channel in CHANNELS
+        for version in sorted(newest_first(releases, channel)[keep:], key=Version.parse)
+    ]
 
 
 def add_release(repo: Repo, manifests: dict[str, dict], channel: str, version: str, keep: int) -> dict:
     release = release_of(manifests, channel, version)
-    repo.versions.mkdir(parents=True, exist_ok=True)
-    (repo.versions / f"{version}.json").write_text(json.dumps(release, indent=2) + "\n")
+    (repo.versions / channel).mkdir(parents=True, exist_ok=True)
+    (repo.versions / channel / f"{version}.json").write_text(json.dumps(release, indent=2) + "\n")
     removed = []
-    for old in releases_to_prune(repo.releases(), keep):
-        (repo.versions / f"{old}.json").unlink()
-        removed.append(f"versions/{old}.json")
+    for old_channel, old in releases_to_prune(repo.releases(), keep):
+        (repo.versions / old_channel / f"{old}.json").unlink()
+        removed.append(f"versions/{old_channel}/{old}.json")
+    # Nix picks each channel's package from here, so it never has to order Flutter versions.
+    kept = repo.releases()
+    heads = {c: newest_first(kept, c)[0] for c in CHANNELS if newest_first(kept, c)}
+    repo.heads_file.write_text(json.dumps(heads, indent=2) + "\n")
     return {"channel": channel, "version": version, "removed": removed}
 
 

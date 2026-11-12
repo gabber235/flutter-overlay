@@ -15,11 +15,14 @@ export PATH="$work/flutter/bin:$PATH"
 export FLUTTER_OVERLAY_HOME="$work/sdk"
 flutter --version
 
-# The version is pinned by Nix, so the launcher refuses to change it.
-if flutter upgrade 2>/dev/null; then
-  echo "flutter upgrade should be refused" >&2
-  exit 1
-fi
+# The version is pinned by Nix, so the launcher refuses to change it, flags or not.
+for command in upgrade "-v upgrade" "channel main"; do
+  # shellcheck disable=SC2086
+  if flutter $command 2>/dev/null; then
+    echo "flutter $command should be refused" >&2
+    exit 1
+  fi
+done
 
 # The shell hook exports FLUTTER_ROOT for IDEs and tools; it must name the unpacked SDK.
 eval "$(nix eval --raw ".#$channel.shellHook")"

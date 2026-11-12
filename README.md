@@ -94,7 +94,9 @@ artifacts into that copy as usual.
   or `~/.cache/flutter-overlay`). Copies are never removed for you: delete a version's directory
   to reclaim its space, and the next run unpacks it again.
 - **`shellHook`** (passthru) unpacks the SDK if needed and exports `FLUTTER_ROOT`, which IDEs and
-  tools started outside `flutter` use to find the SDK. It replaces the `passthru.sdk` of earlier
+  tools started outside `flutter` use to find the SDK. On Linux it also puts `libepoxy` and
+  `fontconfig` on `LD_LIBRARY_PATH`: the upstream engine links them, and a Linux app built in a
+  Nix shell does not otherwise find them, so it would not start. It replaces the `passthru.sdk` of earlier
   versions of this flake: change `FLUTTER_ROOT = "${flutter.sdk}"` to `enterShell =
   flutter.shellHook` (devenv) or `shellHook = flutter.shellHook` (mkShell).
 - **`flutter upgrade`, `downgrade` and `channel <name>`** are refused by the launcher: the

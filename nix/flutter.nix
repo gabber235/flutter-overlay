@@ -12,6 +12,7 @@
   gnutar,
   libepoxy,
   fontconfig,
+  wayland,
   release,
 }:
 let
@@ -33,13 +34,15 @@ let
   };
 
   # The Linux engine (libflutter_linux_gtk.so) finds its libraries only next to itself or in the
-  # system's. A Linux app built in a Nix shell loads GTK and its stack itself, but not these two,
-  # so it fails to start without them on the library path.
+  # system's. A Linux app built in a Nix shell loads GTK and its stack itself, but not these, so
+  # without them on the library path it neither links nor starts. Engines from 3.51 also link
+  # libwayland-client and libwayland-egl; the smoke test fails when an engine links one more.
   engineLibraries = lib.optionalString stdenvNoCC.hostPlatform.isLinux ''
     export LD_LIBRARY_PATH="${
       lib.makeLibraryPath [
         libepoxy
         fontconfig
+        wayland
       ]
     }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   '';

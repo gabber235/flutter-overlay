@@ -94,9 +94,9 @@ artifacts into that copy as usual.
   or `~/.cache/flutter-overlay`). Copies are never removed for you: delete a version's directory
   to reclaim its space, and the next run unpacks it again.
 - **`shellHook`** (passthru) unpacks the SDK if needed and exports `FLUTTER_ROOT`, which IDEs and
-  tools started outside `flutter` use to find the SDK. On Linux it also puts `libepoxy` and
-  `fontconfig` on `LD_LIBRARY_PATH`: the upstream engine links them, and a Linux app built in a
-  Nix shell does not otherwise find them, so it would not start. It replaces the `passthru.sdk` of earlier
+  tools started outside `flutter` use to find the SDK. On Linux it also puts `libepoxy`,
+  `fontconfig` and `wayland` on `LD_LIBRARY_PATH`: the upstream engine links them, and a Linux app
+  built in a Nix shell does not otherwise find them, so it would neither link nor start. It replaces the `passthru.sdk` of earlier
   versions of this flake: change `FLUTTER_ROOT = "${flutter.sdk}"` to `enterShell =
   flutter.shellHook` (devenv) or `shellHook = flutter.shellHook` (mkShell).
 - **`flutter upgrade`, `downgrade` and `channel <name>`** are refused by the launcher: the
@@ -156,7 +156,8 @@ The `Update` workflow runs every 12 hours and on demand:
 
 CI runs on Linux (`ubuntu-latest`) and macOS (`macos-latest`, Apple silicon). For both channels it
 unpacks a fresh SDK, checks the shell hook and the pinned version guard, creates a project, runs
-`flutter test` and `flutter build web` (plus `flutter build macos --debug` on macOS), and generates
+`flutter test` and `flutter build web` (plus `flutter build macos --debug` on macOS, and on Linux
+`flutter build linux --debug` with a check that the app starts), and generates
 freezed code with `dart run build_runner build`, failing on any `InvalidType`.
 
 Run the updater locally:

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Smoke tests one channel the way a developer uses it: creates a project, runs its tests, builds it
-# for the web (and for macOS on a Mac), and generates code with build_runner, whose analyzer must see dart:ui.
+# Smoke tests one channel the way a developer uses it: unpacks the SDK on first run, creates a
+# project, runs its tests, builds it for the web (and for macOS on a Mac), and generates code with
+# build_runner, whose analyzer must see dart:ui.
 #
 # Usage: smoke-test.sh <channel>, from the repository root.
 set -euo pipefail
@@ -10,7 +11,25 @@ work=$(mktemp -d)
 
 nix build ".#$channel" --out-link "$work/flutter"
 export PATH="$work/flutter/bin:$PATH"
+# A fresh SDK home, so the first run unpacks the archive.
+export FLUTTER_OVERLAY_HOME="$work/sdk"
 flutter --version
+
+# The version is pinned by Nix, so the launcher refuses to change it, flags or not.
+for command in upgrade "-v upgrade" "channel main"; do
+  # shellcheck disable=SC2086
+  if flutter $command 2>/dev/null; then
+    echo "flutter $command should be refused" >&2
+    exit 1
+  fi
+done
+
+# The shell hook exports FLUTTER_ROOT for IDEs and tools; it must name the unpacked SDK.
+eval "$(nix eval --raw ".#$channel.shellHook")"
+[[ $FLUTTER_ROOT == "$FLUTTER_OVERLAY_HOME"/* && -x $FLUTTER_ROOT/bin/flutter ]] || {
+  echo "the shell hook set FLUTTER_ROOT to '$FLUTTER_ROOT'" >&2
+  exit 1
+}
 
 cd "$work"
 flutter create --no-pub t
@@ -18,8 +37,8 @@ cd t
 flutter test
 flutter build web
 
-# The macOS build copies FlutterMacOS.framework out of the read only store and thins the copy in
-# place with lipo, which fails unless the copy is writable.
+# The macOS build copies FlutterMacOS.framework out of the SDK and thins it in place with lipo,
+# which needs the SDK to be writable.
 if [[ $(uname) == Darwin ]]; then
   flutter build macos --debug
 fi

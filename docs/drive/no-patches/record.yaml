@@ -1,0 +1,72 @@
+# docs/drive/no-patches/record.yaml: the working state of the no-patches redesign.
+goal: Package upstream Flutter with no patches ("we don't want patches in general"); a new release needs only its hash.
+
+pieces:
+  - id: release-data
+    status: done
+    tries:
+      - id: manifest-archives
+        what: Each release is versions/<channel>/<version>.json holding Flutter's own archive URL and sha256 per system, read straight from the release manifest; versions/channels.json records each channel's newest release so Nix never orders versions.
+        state: picked
+        why: The manifest already carries a sha256 per archive, so updating needs no build.
+        evidence: [updater/test_flutter_overlay_update.py (9 tests green), versions/*.json regenerated from the live manifests]
+  - id: launcher
+    status: done
+    tries:
+      - id: nix-archive-unpack
+        what: Nix fetches the upstream archive; a launcher unpacks it on first run into a writable directory under ~/.cache/flutter-overlay/<version> and runs upstream flutter or dart from there.
+        state: picked
+        why: Chosen by the user over copying an unpacked SDK (two full SDKs on disk) and over the launcher downloading by itself (outside Nix).
+        evidence: [smoke-test.sh stable on aarch64-darwin, exit 0 in 440s, includes flutter build macos and build_runner]
+  - id: linux
+    status: done
+    tries:
+      - id: fhs-wrapper
+        what: On Linux the launcher runs inside a buildFHSEnv so upstream's prebuilt binaries work on NixOS.
+        state: dropped
+        why: Review showed IDEs bypass it through FLUTTER_ROOT (still broken on NixOS) and it hides the host's apt toolchain on Ubuntu; the user switched to nix-ld.
+        evidence: [PR 22 CI run on 14e0c8e passed with it, review findings in the drive conversation]
+      - id: nix-ld
+        what: Linux runs the launcher directly, like macOS; NixOS users enable programs.nix-ld.
+        state: picked
+        why: Same code on every system, host tools stay visible, and nix-ld covers the command line and IDEs.
+        evidence: [PR 22 CI on 2e5272c, ubuntu-latest and macos-latest, stable 3.50.0 and beta 3.51.0-0.1.pre]
+
+decided:
+  - id: no-patches
+    what: "B: no patches. Upstream SDK in a writable copy."
+    why: '"we don''t want patches in general"'
+  - id: sdk-home
+    what: Nix keeps the archive, the launcher unpacks it on first run.
+  - id: linux-scope
+    what: macOS and x86_64 Linux. aarch64 Linux drops out (Flutter ships no archive for it). x86_64-darwin is out too (pinned nixpkgs dropped it).
+  - id: linux-nix-ld
+    what: "Drop wrapper, nix-ld. Replaces the earlier FHS wrapper choice."
+    why: Review evidence that the wrapper misses IDEs and hides the Ubuntu host toolchain.
+  - id: removals
+    what: "Yes, drop both: buildFlutterApplication (with the other nixpkgs passthru) and the Cachix cache."
+  - id: release-identity
+    what: Releases are keyed by channel and version; each channel's head is recorded by the updater; a release waits until every system has an archive.
+    why: Review found beta publishes plain versions and versions shared with stable, which the version only key mishandled.
+  - id: flutter-root
+    what: Packages expose passthru.shellHook, which unpacks the SDK if needed and exports FLUTTER_ROOT; it replaces the old `flutter.sdk` that consumers (GrammarGuard, TypewriterV1) put in FLUTTER_ROOT.
+  - id: pinned-version-guard
+    what: The launcher refuses flutter upgrade, downgrade and channel <name>, because Nix pins the version.
+
+open: []
+
+slices:
+  - id: updater
+    tests: [updater/test_flutter_overlay_update.py]
+    status: done
+  - id: package-and-launcher
+    tests: [.github/scripts/smoke-test.sh on aarch64-darwin]
+    status: done
+  - id: linux
+    tests: [.github/scripts/smoke-test.sh on ubuntu-latest in CI]
+    status: done
+  - id: ci-and-docs
+    tests: [CI green on both runners]
+    status: done
+
+next: The user reviews PR 22 and decides on merging; then migrate GrammarGuard and TypewriterV1 from flutter.sdk to shellHook.

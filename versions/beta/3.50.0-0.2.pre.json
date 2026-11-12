@@ -1,0 +1,14 @@
+{
+  "version": "3.50.0-0.2.pre",
+  "channel": "beta",
+  "archives": {
+    "aarch64-darwin": {
+      "url": "https://storage.googleapis.com/flutter_infra_release/releases/beta/macos/flutter_macos_arm64_3.50.0-0.2.pre-beta.zip",
+      "sha256": "61702b489191dba681bdb60e65ebc57f175ba648bb92fa05b38ec6a30298d2e3"
+    },
+    "x86_64-linux": {
+      "url": "https://storage.googleapis.com/flutter_infra_release/releases/beta/linux/flutter_linux_3.50.0-0.2.pre-beta.tar.xz",
+      "sha256": "6516ae185eb8b245bd10fb70197cc77dbdfa0ad084e33ce16fd6a83ca8b013ce"
+    }
+  }
+}

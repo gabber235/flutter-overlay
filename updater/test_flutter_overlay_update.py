@@ -6,27 +6,57 @@ from pathlib import Path
 from flutter_overlay_update import (
     Repo,
     Version,
+    add_release,
     branch_name,
     current_releases,
-    failed_patches,
-    install_patches,
     plan,
-    prune,
+    release_of,
     releases_to_prune,
-    seed_series,
-    series_of,
 )
+
+BASE_URL = "https://storage.googleapis.com/flutter_infra_release/releases"
+
+
+def entry(channel: str, version: str, archive: str, arch: str, sha: str, hash_: str) -> dict:
+    return {
+        "hash": hash_,
+        "channel": channel,
+        "version": version,
+        "archive": archive,
+        "dart_sdk_arch": arch,
+        "sha256": sha,
+    }
+
+
+def manifests() -> dict[str, dict]:
+    """Manifests shaped like Flutter's releases_<os>.json."""
+    return {
+        "macos": {
+            "base_url": BASE_URL,
+            "current_release": {"stable": "s1", "beta": "b1"},
+            "releases": [
+                entry("stable", "3.50.0", "stable/macos/flutter_macos_arm64_3.50.0-stable.zip", "arm64", "a" * 64, "s1"),
+                entry("stable", "3.50.0", "stable/macos/flutter_macos_3.50.0-stable.zip", "x64", "b" * 64, "s1"),
+                entry("stable", "3.47.9", "stable/macos/flutter_macos_arm64_3.47.9-stable.zip", "arm64", "e" * 64, "s0"),
+                entry("beta", "3.51.0-0.1.pre", "beta/macos/flutter_macos_arm64_3.51.0-0.1.pre-beta.zip", "arm64", "c" * 64, "b1"),
+                entry("beta", "3.52.0", "beta/macos/flutter_macos_arm64_3.52.0-beta.zip", "arm64", "2" * 64, "b2"),
+            ],
+        },
+        "linux": {
+            "base_url": BASE_URL,
+            "current_release": {"stable": "s1", "beta": "b1"},
+            "releases": [
+                entry("stable", "3.50.0", "stable/linux/flutter_linux_3.50.0-stable.tar.xz", "x64", "d" * 64, "s1"),
+                entry("stable", "3.47.9", "stable/linux/flutter_linux_3.47.9-stable.tar.xz", "x64", "f" * 64, "s0"),
+                entry("beta", "3.52.0", "beta/linux/flutter_linux_3.52.0-beta.tar.xz", "x64", "1" * 64, "b2"),
+            ],
+        },
+    }
 
 
 def write_release(repo: Path, version: str, channel: str) -> None:
-    target = repo / "versions" / version
-    target.mkdir(parents=True)
-    (target / "data.json").write_text(json.dumps({"version": version, "channel": channel}))
-
-
-def write_patch(directory: Path, name: str) -> None:
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / name).write_text(f"{name}\n")
+    repo.joinpath("versions", channel).mkdir(parents=True, exist_ok=True)
+    (repo / "versions" / channel / f"{version}.json").write_text(json.dumps({"version": version, "channel": channel}))
 
 
 class VersionTest(unittest.TestCase):
@@ -39,143 +69,102 @@ class VersionTest(unittest.TestCase):
 
     def test_rejects_non_versions(self):
         with self.assertRaises(ValueError):
-            Version.parse("main")
+            Version.parse("v3.50")
 
-    def test_series_is_major_and_minor(self):
-        self.assertEqual(series_of("3.50.0-0.2.pre"), "3_50")
-        self.assertEqual(series_of("3.47.8"), "3_47")
+
+class ReleaseOfTest(unittest.TestCase):
+    def test_collects_every_system_archive_with_its_url_and_hash(self):
+        self.assertEqual(
+            release_of(manifests(), "stable", "3.50.0"),
+            {
+                "version": "3.50.0",
+                "channel": "stable",
+                "archives": {
+                    "aarch64-darwin": {
+                        "url": f"{BASE_URL}/stable/macos/flutter_macos_arm64_3.50.0-stable.zip",
+                        "sha256": "a" * 64,
+                    },
+                    "x86_64-linux": {
+                        "url": f"{BASE_URL}/stable/linux/flutter_linux_3.50.0-stable.tar.xz",
+                        "sha256": "d" * 64,
+                    },
+                },
+            },
+        )
+
+    def test_rejects_a_release_not_yet_published_for_every_system(self):
+        # 3.51.0-0.1.pre has a macOS archive but no Linux one yet; adding it now would leave
+        # Linux behind for good, so it waits for the next run.
+        with self.assertRaises(SystemExit):
+            release_of(manifests(), "beta", "3.51.0-0.1.pre")
+
+    def test_rejects_a_release_the_manifests_do_not_list(self):
+        with self.assertRaises(SystemExit):
+            release_of(manifests(), "stable", "9.9.9")
 
 
 class PlanTest(unittest.TestCase):
-    manifest = {
-        "current_release": {"stable": "s2", "beta": "b1", "dev": "d1"},
-        "releases": [
-            {"hash": "b1", "channel": "beta", "version": "3.50.0-0.2.pre"},
-            {"hash": "s2", "channel": "stable", "version": "3.47.8"},
-            {"hash": "s1", "channel": "stable", "version": "3.47.7"},
-            {"hash": "d1", "channel": "dev", "version": "2.13.0-0.2.pre"},
-        ],
-    }
-
-    def test_reads_current_release_of_published_channels_only(self):
+    def test_reads_the_current_release_of_each_channel(self):
         self.assertEqual(
-            current_releases(self.manifest), {"stable": "3.47.8", "beta": "3.50.0-0.2.pre"}
+            current_releases(manifests()["macos"]),
+            {"stable": "3.50.0", "beta": "3.51.0-0.1.pre"},
         )
 
-    def test_plans_channels_whose_current_release_is_missing(self):
-        current = current_releases(self.manifest)
+    def test_skips_kept_releases_and_pending_branches(self):
+        current = {"stable": "3.50.0", "beta": "3.51.0-0.1.pre"}
         self.assertEqual(
-            plan(current, {"3.47.8": "stable"}, set()),
-            [{"channel": "beta", "version": "3.50.0-0.2.pre"}],
+            plan(current, {("stable", "3.50.0")}, set()),
+            [{"channel": "beta", "version": "3.51.0-0.1.pre"}],
         )
-
-    def test_skips_releases_with_a_pending_update_branch(self):
-        current = current_releases(self.manifest)
-        pending = {branch_name("beta", "3.50.0-0.2.pre"), branch_name("stable", "3.47.8")}
-        self.assertEqual(plan(current, {}, pending), [])
-
-
-class SeedTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.nixpkgs_versions = self.root / "nixpkgs-versions"
-        write_patch(self.nixpkgs_versions / "3_44" / "patches", "old.patch")
-        write_patch(self.nixpkgs_versions / "3_47" / "patches", "nixpkgs.patch")
-        self.repo = Repo(self.root / "repo")
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def test_new_series_starts_from_closest_older_series_in_repo(self):
-        write_patch(self.repo.patches / "3_44", "a.patch")
-        write_patch(self.repo.patches / "3_47", "b.patch")
-        self.assertEqual(seed_series(self.repo, "3_50", self.nixpkgs_versions), "patches/3_47")
         self.assertEqual(
-            sorted(p.name for p in (self.repo.patches / "3_50").iterdir()), ["b.patch"]
-        )
-
-    def test_first_series_starts_from_nixpkgs(self):
-        self.assertIn("versions/3_47", seed_series(self.repo, "3_50", self.nixpkgs_versions))
-        self.assertTrue((self.repo.patches / "3_50" / "nixpkgs.patch").is_file())
-
-    def test_nixpkgs_patches_for_the_same_series_win(self):
-        write_patch(self.repo.patches / "3_44", "a.patch")
-        self.assertIn("versions/3_47", seed_series(self.repo, "3_47", self.nixpkgs_versions))
-        self.assertTrue((self.repo.patches / "3_47" / "nixpkgs.patch").is_file())
-
-    def test_existing_series_is_left_alone(self):
-        write_patch(self.repo.patches / "3_50", "rebased.patch")
-        self.assertIsNone(seed_series(self.repo, "3_50", self.nixpkgs_versions))
-        self.assertEqual(
-            [p.name for p in (self.repo.patches / "3_50").iterdir()], ["rebased.patch"]
+            plan(current, set(), {branch_name("beta", "3.51.0-0.1.pre")}),
+            [{"channel": "stable", "version": "3.50.0"}],
         )
 
 
-class InstallPatchesTest(unittest.TestCase):
-    def test_tree_applies_global_patches_plus_series_with_series_winning(self):
+class AddReleaseTest(unittest.TestCase):
+    def test_writes_the_release_prunes_its_channel_and_records_each_channel_head(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            flutter = root / "flutter"
-            write_patch(flutter / "patches", "global.patch")
-            write_patch(flutter / "patches", "override-host-platform.patch")
-            write_patch(flutter / "versions" / "3_50" / "patches", "stale.patch")
-            series = root / "repo" / "patches" / "3_50"
-            write_patch(series, "override-host-platform.patch")
-            write_patch(series, "disable-auto-update.patch")
-            install_patches(flutter, series, "3_50")
-            self.assertEqual([p.name for p in (flutter / "patches").iterdir()], ["global.patch"])
+            for version in ["3.47.6", "3.47.7", "3.47.8"]:
+                write_release(root, version, "stable")
+            write_release(root, "3.50.0-0.3.pre", "beta")
+
+            summary = add_release(Repo(root), manifests(), "stable", "3.50.0", keep=3)
+
             self.assertEqual(
-                sorted(p.name for p in (flutter / "versions" / "3_50" / "patches").iterdir()),
-                ["disable-auto-update.patch", "override-host-platform.patch"],
+                summary,
+                {"channel": "stable", "version": "3.50.0", "removed": ["versions/stable/3.47.6.json"]},
             )
+            self.assertEqual(
+                Repo(root).releases(),
+                {("stable", "3.47.7"), ("stable", "3.47.8"), ("stable", "3.50.0"), ("beta", "3.50.0-0.3.pre")},
+            )
+            written = json.loads((root / "versions" / "stable" / "3.50.0.json").read_text())
+            self.assertEqual(written, release_of(manifests(), "stable", "3.50.0"))
+            self.assertEqual(Repo(root).heads(), {"stable": "3.50.0", "beta": "3.50.0-0.3.pre"})
 
-
-class PruneTest(unittest.TestCase):
-    def test_keeps_newest_per_channel(self):
-        releases = {
-            "3.47.6": "stable",
-            "3.47.7": "stable",
-            "3.47.8": "stable",
-            "3.49.0-0.2.pre": "beta",
-            "3.50.0-0.2.pre": "beta",
-        }
-        self.assertEqual(releases_to_prune(releases, 2), ["3.47.6"])
-
-    def test_removes_releases_and_unused_series(self):
+    def test_a_beta_release_outranks_its_prereleases_and_can_share_a_version_with_stable(self):
         with tempfile.TemporaryDirectory() as tmp:
-            repo = Repo(Path(tmp))
-            write_release(repo.root, "3.49.0-0.2.pre", "beta")
-            write_release(repo.root, "3.50.0-0.2.pre", "beta")
-            write_release(repo.root, "3.47.8", "stable")
-            for series in ("3_44", "3_47", "3_49", "3_50"):
-                write_patch(repo.patches / series, "a.patch")
-            removed = prune(repo, 1)
-            self.assertEqual(removed, ["versions/3.49.0-0.2.pre", "patches/3_44", "patches/3_49"])
-            self.assertEqual(repo.series(), ["3_47", "3_50"])
+            root = Path(tmp)
+            write_release(root, "3.52.0-0.3.pre", "beta")
+            write_release(root, "3.52.0", "stable")
 
+            add_release(Repo(root), manifests(), "beta", "3.52.0", keep=3)
 
-class BuildLogTest(unittest.TestCase):
-    def test_names_patches_that_fail_to_apply(self):
-        log = "\n".join(
-            [
-                "applying patch /nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-copy-without-perms.patch",
-                "patching file packages/flutter_tools/lib/src/base/os.dart",
-                "applying patch /nix/store/dddddddddddddddddddddddddddddddd-disable-auto-update.patch",
-                "patching file packages/flutter_tools/lib/src/runner/flutter_command.dart",
-                "Hunk #1 FAILED at 1693.",
-                "Hunk #2 FAILED at 1700.",
-                "applying patch /nix/store/gggggggggggggggggggggggggggggggg-override-host-platform-base.patch",
-                "can't find file to patch at input line 3",
-            ]
-        )
-        self.assertEqual(
-            failed_patches(log),
-            ["disable-auto-update.patch", "override-host-platform-base.patch"],
-        )
+            self.assertEqual(Repo(root).heads(), {"stable": "3.52.0", "beta": "3.52.0"})
+            self.assertIn(("stable", "3.52.0"), Repo(root).releases())
 
-    def test_other_failures_name_no_patch(self):
-        self.assertEqual(failed_patches("error: hash mismatch in fixed-output derivation"), [])
+    def test_an_older_release_never_replaces_the_channel_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            add_release(Repo(root), manifests(), "stable", "3.50.0", keep=3)
+            add_release(Repo(root), manifests(), "stable", "3.47.9", keep=3)
+            self.assertEqual(Repo(root).heads(), {"stable": "3.50.0"})
+
+    def test_prunes_per_channel(self):
+        releases = {("stable", "3.47.9"), ("stable", "3.50.0"), ("beta", "3.50.0-0.1.pre"), ("beta", "3.50.0-0.2.pre")}
+        self.assertEqual(releases_to_prune(releases, keep=1), [("stable", "3.47.9"), ("beta", "3.50.0-0.1.pre")])
 
 
 if __name__ == "__main__":

@@ -14,7 +14,6 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
 
 defaults:
   run:
@@ -29,20 +28,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      BRANCH: ${{ github.head_ref || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
-      - uses: cachix/cachix-action@v17
-        with:
-          name: gabber235
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          # Pull only until the token exists (and on forks, which get no secrets).
-          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
-
       - name: Flake checks
-        run: nix flake check --print-build-logs --keep-going 2>&1 | tee "$RUNNER_TEMP/build.log"
+        run: nix flake check --print-build-logs --keep-going
 
       - name: Smoke test each channel
         run: |
@@ -51,25 +41,3 @@ jobs:
             .github/scripts/smoke-test.sh "$channel"
             echo "::endgroup::"
           done
-
-      - name: Report patches that no longer apply
-        if: failure() && startsWith(env.BRANCH, 'update/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          nix run .#updater -- classify-build-log "$RUNNER_TEMP/build.log" > "$RUNNER_TEMP/failed" || exit 0
-          title="Patches no longer apply on $BRANCH"
-          if gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number' | grep -q .; then
-            exit 0
-          fi
-          {
-            echo "The build of \`$BRANCH\` on ${{ matrix.os }} failed because these patches no longer apply:"
-            echo
-            sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/failed"
-            echo
-            echo "Run: $RUN_URL"
-            echo
-            echo "Rebase them in \`patches/<series>\` on the update branch; see the README section on rebasing a patch."
-          } > "$RUNNER_TEMP/body.md"
-          gh issue create --title "$title" --body-file "$RUNNER_TEMP/body.md"

@@ -30,7 +30,7 @@ pieces:
         what: Linux runs the launcher directly, like macOS; NixOS users enable programs.nix-ld.
         state: picked
         why: Same code on every system, host tools stay visible, and nix-ld covers the command line and IDEs.
-        evidence: []
+        evidence: [PR 22 CI on 2e5272c, ubuntu-latest and macos-latest, stable 3.50.0 and beta 3.51.0-0.1.pre]
 
 decided:
   - id: no-patches
@@ -64,9 +64,9 @@ slices:
     status: done
   - id: linux
     tests: [.github/scripts/smoke-test.sh on ubuntu-latest in CI]
-    status: building
+    status: done
   - id: ci-and-docs
     tests: [CI green on both runners]
-    status: todo
+    status: done
 
-next: Push the review fixes, confirm CI on both runners, then hand the PR back for review.
+next: The user reviews PR 22 and decides on merging; then migrate GrammarGuard and TypewriterV1 from flutter.sdk to shellHook.

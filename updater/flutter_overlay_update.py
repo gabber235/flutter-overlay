@@ -1,14 +1,12 @@
 """Keeps the Flutter releases in this repository in step with Flutter's release channels.
 
-Flutter publishes the current release of each channel in its release manifest. For every channel
-whose current release is not yet in `versions/`, `update` runs nixpkgs' own Flutter update script
-(pkgs/development/compilers/flutter/update/update.py) against the pinned nixpkgs and stores the
-`data.json` it writes as `versions/<version>/data.json`.
+Flutter publishes every release archive, with its sha256, in one manifest per operating system.
+`update` copies one release's archives from those manifests into `versions/<version>.json`; the
+Nix package fetches the archive for its system from there. Nothing is built.
 
 Commands:
-  plan                 Print a JSON list of {channel, version} releases that are missing.
-  update               Add the current release of one channel, seed its patch series, prune.
-  classify-build-log   Print the patches a failed build could not apply (exit 1 if none).
+  plan     Print a JSON list of {channel, version} releases that are missing.
+  update   Add one release of a channel (its current one by default) and prune old releases.
 """
 
 from __future__ import annotations
@@ -16,26 +14,28 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import subprocess
 import sys
-import tempfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-MANIFEST_URL = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"
+MANIFEST_URL = "https://storage.googleapis.com/flutter_infra_release/releases/releases_{os}.json"
+
+# Manifests to read, and the Nix system each (os, dart_sdk_arch) archive runs on. Flutter
+# publishes no archive for aarch64 Linux.
+SYSTEMS = {
+    ("macos", "arm64"): "aarch64-darwin",
+    ("macos", "x64"): "x86_64-darwin",
+    ("linux", "x64"): "x86_64-linux",
+}
+OPERATING_SYSTEMS = sorted({os for os, _ in SYSTEMS})
 
 # Channels that publish release archives. `dev` was retired in 2022 and `master` publishes none.
 CHANNELS = ("stable", "beta")
 
 # Releases kept per channel, newest first. The channel's current release is always among them.
 KEEP_PER_CHANNEL = 3
-
-FLUTTER_DIR = "pkgs/development/compilers/flutter"
-
-
-# Versions
 
 
 @dataclass(frozen=True, order=True)
@@ -64,20 +64,6 @@ class Version:
         )
 
 
-def series_of(version: str) -> str:
-    """The patch series a version belongs to: "3.50.0-0.2.pre" -> "3_50"."""
-    parsed = Version.parse(version)
-    return f"{parsed.major}_{parsed.minor}"
-
-
-def series_key(series: str) -> tuple[int, int]:
-    major, minor = series.split("_")
-    return int(major), int(minor)
-
-
-# Repository state
-
-
 @dataclass(frozen=True)
 class Repo:
     root: Path
@@ -86,36 +72,59 @@ class Repo:
     def versions(self) -> Path:
         return self.root / "versions"
 
-    @property
-    def patches(self) -> Path:
-        return self.root / "patches"
-
     def releases(self) -> dict[str, str]:
         """Kept releases as {version: channel}."""
-        releases = {}
-        if not self.versions.is_dir():
-            return releases
-        for data in self.versions.glob("*/data.json"):
-            releases[data.parent.name] = json.loads(data.read_text())["channel"]
-        return releases
-
-    def series(self) -> list[str]:
-        if not self.patches.is_dir():
-            return []
-        return sorted((d.name for d in self.patches.iterdir() if d.is_dir()), key=series_key)
+        return {
+            path.stem: json.loads(path.read_text())["channel"]
+            for path in sorted(self.versions.glob("*.json"))
+        }
 
 
-# Planning
+# Reading the manifests
+
+
+def fetch_manifests() -> dict[str, dict]:
+    manifests = {}
+    for os in OPERATING_SYSTEMS:
+        with urllib.request.urlopen(MANIFEST_URL.format(os=os), timeout=60) as response:
+            manifests[os] = json.load(response)
+    return manifests
 
 
 def current_releases(manifest: dict) -> dict[str, str]:
     """The current version of each channel in a Flutter release manifest."""
-    by_hash = {}
-    for release in manifest["releases"]:
-        by_hash.setdefault((release["channel"], release["hash"]), release["version"])
+    by_hash = {(r["channel"], r["hash"]): r["version"] for r in reversed(manifest["releases"])}
     return {
         channel: by_hash[(channel, manifest["current_release"][channel])] for channel in CHANNELS
     }
+
+
+def release_of(manifests: dict[str, dict], channel: str, version: str) -> dict:
+    """One release with the archive URL and sha256 for every system Flutter publishes it for."""
+    archives = {}
+    for os, manifest in manifests.items():
+        for entry in manifest["releases"]:
+            system = SYSTEMS.get((os, entry.get("dart_sdk_arch", "x64")))
+            if entry["channel"] == channel and entry["version"] == version and system:
+                archives.setdefault(
+                    system,
+                    {"url": f"{manifest['base_url']}/{entry['archive']}", "sha256": entry["sha256"]},
+                )
+    if not archives:
+        raise SystemExit(f"Flutter's manifests list no {channel} release {version}")
+    order = list(SYSTEMS.values())
+    return {
+        "version": version,
+        "channel": channel,
+        "archives": dict(sorted(archives.items(), key=lambda item: order.index(item[0]))),
+    }
+
+
+# Planning and adding releases
+
+
+def branch_name(channel: str, version: str) -> str:
+    return f"update/{channel}-{version}"
 
 
 def plan(current: dict[str, str], kept: dict[str, str], pending: set[str]) -> list[dict]:
@@ -125,54 +134,6 @@ def plan(current: dict[str, str], kept: dict[str, str], pending: set[str]) -> li
         for channel, version in current.items()
         if version not in kept and branch_name(channel, version) not in pending
     ]
-
-
-def branch_name(channel: str, version: str) -> str:
-    return f"update/{channel}-{version}"
-
-
-def fetch_manifest() -> dict:
-    with urllib.request.urlopen(MANIFEST_URL, timeout=60) as response:
-        return json.load(response)
-
-
-def remote_branches(repo: Path, remote: str) -> set[str]:
-    output = run(["git", "ls-remote", "--heads", remote], cwd=repo, capture=True)
-    prefix = "refs/heads/"
-    return {
-        line.split()[1][len(prefix) :]
-        for line in output.splitlines()
-        if line.split()[1].startswith(prefix)
-    }
-
-
-# Adding a release
-
-
-def seed_series(repo: Repo, series: str, nixpkgs_versions: Path) -> str | None:
-    """Create patches/<series> from the closest patch set that exists.
-
-    nixpkgs' own patches for the same series win. Otherwise the newest older series is used,
-    preferring this repository's copy (it carries earlier rebases) over nixpkgs'. Returns where
-    the patches came from, or None when the series already existed.
-    """
-    target = repo.patches / series
-    if target.is_dir():
-        return None
-    candidates = [(series_key(s), 1, repo.patches / s, f"patches/{s}") for s in repo.series()]
-    candidates += [
-        (series_key(d.name), 0, d / "patches", f"nixpkgs {FLUTTER_DIR}/versions/{d.name}/patches")
-        for d in nixpkgs_versions.iterdir()
-        if (d / "patches").is_dir()
-    ]
-    same = [c for c in candidates if c[0] == series_key(series) and c[1] == 0]
-    older = sorted(c for c in candidates if c[0] < series_key(series))
-    chosen = same[0] if same else older[-1] if older else None
-    if chosen is None:
-        target.mkdir(parents=True)
-        return "nothing"
-    shutil.copytree(chosen[2], target)
-    return chosen[3]
 
 
 def releases_to_prune(releases: dict[str, str], keep: int) -> list[str]:
@@ -186,134 +147,25 @@ def releases_to_prune(releases: dict[str, str], keep: int) -> list[str]:
     return sorted(pruned, key=Version.parse)
 
 
-def prune(repo: Repo, keep: int) -> list[str]:
-    """Drop old releases and the patch series no kept release uses. Returns what was removed."""
+def add_release(repo: Repo, manifests: dict[str, dict], channel: str, version: str, keep: int) -> dict:
+    release = release_of(manifests, channel, version)
+    repo.versions.mkdir(parents=True, exist_ok=True)
+    (repo.versions / f"{version}.json").write_text(json.dumps(release, indent=2) + "\n")
     removed = []
-    for version in releases_to_prune(repo.releases(), keep):
-        shutil.rmtree(repo.versions / version)
-        removed.append(f"versions/{version}")
-    used = {series_of(v) for v in repo.releases()}
-    for series in repo.series():
-        if series not in used:
-            shutil.rmtree(repo.patches / series)
-            removed.append(f"patches/{series}")
-    return removed
+    for old in releases_to_prune(repo.releases(), keep):
+        (repo.versions / f"{old}.json").unlink()
+        removed.append(f"versions/{old}.json")
+    return {"channel": channel, "version": version, "removed": removed}
 
 
-def nixpkgs_source(repo: Path) -> Path:
-    """The store path of the nixpkgs revision flake.lock pins."""
-    archive = json.loads(run(["nix", "flake", "archive", "--json"], cwd=repo, capture=True))
-    return Path(archive["inputs"]["nixpkgs"]["path"])
-
-
-def install_patches(flutter_dir: Path, series_dir: Path, series: str) -> None:
-    """Make a nixpkgs Flutter tree use this repository's patch set for `series`.
-
-    nixpkgs builds a version with its global patches plus versions/<series>/patches. This puts
-    patches/<series> there and drops the global patches it replaces, so the tree applies exactly
-    the patches nix/default.nix applies.
-    """
-    target = flutter_dir / "versions" / series / "patches"
-    if target.exists():
-        shutil.rmtree(target)
-    shutil.copytree(series_dir, target)
-    for patch in series_dir.glob("*.patch"):
-        (flutter_dir / "patches" / patch.name).unlink(missing_ok=True)
-
-
-def run_nixpkgs_update(
-    nixpkgs: Path, channel: str, version: str, series_dir: Path, scratch: Path
-) -> Path:
-    """Run nixpkgs' update script in a writable copy of `nixpkgs`; return the data.json it wrote.
-
-    The script locates nixpkgs with `git rev-parse` and writes into that checkout, so it runs in a
-    scratch copy that is a git repository. The artifact hashes it records come from running the
-    patched `flutter precache`, so the copy carries this repository's patches for the series.
-    """
-    checkout = scratch / "nixpkgs"
-    run(["cp", "-R", str(nixpkgs), str(checkout)])
-    run(["chmod", "-R", "u+w", str(checkout)])
-    install_patches(checkout / FLUTTER_DIR, series_dir, series_of(version))
-    run(["git", "init", "--quiet"], cwd=checkout)
-    run(
-        [
-            sys.executable,
-            f"{FLUTTER_DIR}/update/update.py",
-            "--channel",
-            channel,
-            "--version",
-            version,
-        ],
-        cwd=checkout,
-    )
-    data = checkout / FLUTTER_DIR / "versions" / series_of(version) / "data.json"
-    written = json.loads(data.read_text())
-    if written.get("version") != version or not written.get("artifactHashes"):
-        raise SystemExit(f"the nixpkgs update script did not finish {version}: {data}")
-    return data
-
-
-def update(repo: Repo, channel: str, version: str | None, keep: int) -> dict:
-    if version is None:
-        version = current_releases(fetch_manifest())[channel]
-    series = series_of(version)
-    nixpkgs = nixpkgs_source(repo.root)
-    seeded = seed_series(repo, series, nixpkgs / FLUTTER_DIR / "versions")
-    with tempfile.TemporaryDirectory(prefix="flutter-overlay-") as scratch:
-        data = run_nixpkgs_update(nixpkgs, channel, version, repo.patches / series, Path(scratch))
-        target = repo.versions / version
-        target.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(data, target / "data.json")
-    removed = prune(repo, keep)
+def remote_branches(repo: Path, remote: str) -> set[str]:
+    output = subprocess.run(
+        ["git", "ls-remote", "--heads", remote], cwd=repo, check=True, text=True, capture_output=True
+    ).stdout
+    prefix = "refs/heads/"
     return {
-        "channel": channel,
-        "version": version,
-        "series": series,
-        "seededFrom": seeded,
-        "removed": removed,
+        ref[len(prefix) :] for ref in (line.split()[1] for line in output.splitlines()) if ref.startswith(prefix)
     }
-
-
-# Build failures
-
-PATCH_FAILURE = re.compile(
-    r"^(?:applying patch (?P<applying>\S+)|"
-    r"(?P<failed>Hunk #\d+ FAILED.*|can't find file to patch.*|"
-    r"Reversed \(or previously applied\) patch detected.*))$",
-    re.MULTILINE,
-)
-
-
-STORE_HASH = re.compile(r"^[0-9a-z]{32}-")
-
-
-def failed_patches(log: str) -> list[str]:
-    """Patches a build log shows failing to apply, in order, without duplicates."""
-    current = None
-    failed: list[str] = []
-    for match in PATCH_FAILURE.finditer(log):
-        if match["applying"]:
-            current = STORE_HASH.sub("", Path(match["applying"]).name)
-        elif current is not None and current not in failed:
-            failed.append(current)
-        elif current is None and "unknown patch" not in failed:
-            failed.append("unknown patch")
-    return failed
-
-
-# Command line
-
-
-def run(command: list[str], cwd: Path | None = None, capture: bool = False) -> str:
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        check=True,
-        text=True,
-        # Stdout carries this tool's own result, so commands report on stderr.
-        stdout=subprocess.PIPE if capture else sys.stderr,
-    )
-    return result.stdout if capture else ""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -333,24 +185,17 @@ def main(argv: list[str] | None = None) -> int:
     update_parser.add_argument("--version", help="defaults to the channel's current release")
     update_parser.add_argument("--keep", type=int, default=KEEP_PER_CHANNEL)
 
-    classify_parser = commands.add_parser("classify-build-log")
-    classify_parser.add_argument("log", type=Path)
-
     args = parser.parse_args(argv)
     repo = Repo(args.repo.resolve())
+    manifests = fetch_manifests()
 
     if args.command == "plan":
         pending = remote_branches(repo.root, args.skip_branches_on) if args.skip_branches_on else set()
-        print(json.dumps(plan(current_releases(fetch_manifest()), repo.releases(), pending)))
+        print(json.dumps(plan(current_releases(manifests["linux"]), repo.releases(), pending)))
         return 0
-    if args.command == "update":
-        print(json.dumps(update(repo, args.channel, args.version, args.keep), indent=2))
-        return 0
-    if args.command == "classify-build-log":
-        failed = failed_patches(args.log.read_text(errors="replace"))
-        print("\n".join(failed))
-        return 0 if failed else 1
-    return 2
+    version = args.version or current_releases(manifests["linux"])[args.channel]
+    print(json.dumps(add_release(repo, manifests, args.channel, version, args.keep), indent=2))
+    return 0
 
 
 if __name__ == "__main__":

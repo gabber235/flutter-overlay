@@ -71,13 +71,13 @@ jobs:
         run: |
           {
             echo 'body<<EOF'
-            echo "Packages Flutter ${{ matrix.version }} (${{ matrix.channel }} channel) from the data nixpkgs' Flutter update script generates."
+            echo "Packages Flutter ${{ matrix.version }} (${{ matrix.channel }} channel): the upstream archives and their sha256 from Flutter's release manifests."
             echo
             echo '```json'
             cat "$RUNNER_TEMP/summary.json"
             echo '```'
             echo
-            echo "CI builds it on Linux and macOS and this merges automatically when it is green. If a patch no longer applies, CI opens an issue; rebase the patch on this branch."
+            echo "CI smoke tests it on Linux and macOS and this merges automatically when it is green."
             echo EOF
           } >> "$GITHUB_OUTPUT"
       - id: pr

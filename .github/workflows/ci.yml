@@ -31,6 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
+      # Reads gabber235.cachix.org and, after the job, pushes every path it built there, so
+      # consumers download Flutter instead of fetching it themselves. Fork pull requests get no
+      # token, so they only read.
+      - uses: cachix/cachix-action@v17
+        with:
+          name: gabber235
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Flake checks
         run: nix flake check --print-build-logs --keep-going
 

@@ -41,6 +41,15 @@ jobs:
       - name: Flake checks
         run: nix flake check --print-build-logs --keep-going
 
+      # Consumers pin exact versions, so every kept release is built and pushed, not only the
+      # channel heads the checks build. Each is an archive download, from the cache once pushed.
+      - name: Build every kept release
+        run: |
+          system=$(nix eval --raw --impure --expr builtins.currentSystem)
+          # shellcheck disable=SC2046
+          nix build --no-link --print-build-logs $(nix eval --raw ".#legacyPackages.$system.versions" \
+            --apply 'vs: toString (map (p: "${p.drvPath}^out") (builtins.attrValues vs))')
+
       - name: Smoke test each channel
         run: |
           for channel in stable beta; do

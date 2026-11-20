@@ -1,0 +1,14 @@
+{
+  "version": "3.50.1",
+  "channel": "stable",
+  "archives": {
+    "aarch64-darwin": {
+      "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_3.50.1-stable.zip",
+      "sha256": "872883d49965e0cc1d8e477d2d87f2f45930d13f94b34889e53783586f04c715"
+    },
+    "x86_64-linux": {
+      "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.50.1-stable.tar.xz",
+      "sha256": "4ad17fc8462fbcef2ba19ff4a78c0a16b7147fde1add8578e267ea62cdb92678"
+    }
+  }
+}

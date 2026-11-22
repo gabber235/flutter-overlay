@@ -76,10 +76,12 @@ in
 ## How it works
 
 ```
-versions/<channel>/<version>.json   archive URL and sha256 per system, from Flutter's manifests
+versions/<channel>/<version>.json   archive URL and sha256 per system, from Flutter's manifests,
+                                    and the files of bin/cache for aarch64 Linux
 versions/channels.json              the newest kept release of each channel
 nix/flutter.nix                     fetches the archive and puts a launcher on bin/flutter and bin/dart
 nix/launcher.sh                     unpacks the archive on first run and runs upstream flutter or dart
+nix/linux-arm64-cache.nix           bin/cache and the tool snapshot for aarch64 Linux
 updater/                            the updater (Python, standard library only) and its tests
 ```
 
@@ -111,8 +113,34 @@ artifacts into that copy as usual.
 
 ## Outputs
 
-Systems: `aarch64-darwin`, `x86_64-linux`. Flutter publishes no archive for aarch64 Linux, and
-nixpkgs no longer supports x86_64-darwin.
+Systems: `aarch64-darwin`, `x86_64-linux`, `aarch64-linux`. nixpkgs no longer supports
+x86_64-darwin.
+
+### aarch64 Linux
+
+Flutter publishes no archive for aarch64 Linux; it supports that host from a git checkout of the
+release. The package builds exactly that, with nothing left to download on the first run:
+
+- **The git checkout** (its `.git` and framework, the same on every platform) comes from the x64
+  Linux release archive, which holds it next to `bin/cache`, the files the tool downloaded for x64.
+- **`bin/cache`** is built by Nix (`nix/linux-arm64-cache.nix`) from the files Flutter's tool
+  downloads on an ARM Linux host: the arm64 Dart SDK, the `linux-arm64` engine and GTK embedder
+  artifacts, and the platform independent ones (fonts, Gradle wrapper, web SDK, `sky_engine`, the
+  patched SDKs, `engine_stamp.json`). They come from the same URLs the tool uses, each pinned by the
+  sha256 of the published file, are unpacked where the tool unpacks them, and carry the stamps the
+  tool compares, so it finds them up to date.
+- **The tool** runs from `bin/cache/flutter_tools.snapshot`. The archive's is compiled for x64, and
+  `bin/internal/shared.sh` would rebuild it with `pub upgrade`, which does not pin its packages. So
+  Nix builds it with shared.sh's own compile command, from the archive's sources and the package
+  versions the archive's `packages/flutter_tools/pubspec.lock` records (each pinned by its
+  sha256), resolved offline, and writes the stamp shared.sh checks. The tool's generated
+  `packages/flutter_tools/.dart_tool` is the one that resolution writes; the archive's points at the
+  package cache of Google's build machine.
+
+No file of Flutter changes. The updater records every URL and sha256 in the release's
+`aarch64-linux` entry. CI runs the first `flutter` commands on aarch64 Linux without a network.
+Flutter's daily check for a newer release, a `git fetch`, still runs there as upstream does
+anywhere, and fails quietly offline.
 
 | Output | Contents |
 | --- | --- |
@@ -149,12 +177,14 @@ The `Update` workflow runs every 12 hours and on demand:
 2. For each, `updater update` writes `versions/<channel>/<version>.json` with the archive URL and
    sha256 of every system straight from the manifests, prunes releases beyond the newest three of
    the channel, and records each channel's newest release in `versions/channels.json`. A release
-   not yet published for every system waits for the next run. Nothing is built.
+   not yet published for every system waits for the next run. For aarch64 Linux it also reads the
+   engine version and the tool's lock from the x64 archive and hashes each file of `bin/cache` as
+   published (a few minutes of downloads). Nothing is built.
 3. It opens one pull request per release (`update/<channel>-<version>`), approves the CI run
    GitHub holds for pull requests opened by a workflow, and enables auto merge.
 4. The same workflow bumps the pinned nixpkgs in its own pull request (`update/nixpkgs`).
 
-CI runs on Linux (`ubuntu-latest`) and macOS (`macos-latest`, Apple silicon). For both channels it
+CI runs on Linux (`ubuntu-latest` and `ubuntu-24.04-arm`) and macOS (`macos-latest`, Apple silicon). For both channels it
 unpacks a fresh SDK, checks the shell hook and the pinned version guard, creates a project, runs
 `flutter test` and `flutter build web` (plus `flutter build macos --debug` on macOS, and on Linux
 `flutter build linux --debug` with a check that the app starts), and generates

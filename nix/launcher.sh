@@ -6,6 +6,10 @@
 # $FLUTTER_OVERLAY_HOME/<version>-<archive id> (default ~/.cache/flutter-overlay) and from then
 # on runs `flutter` or `dart` from there, exactly like a manual install.
 #
+# On aarch64 Linux, where Flutter publishes no archive, the archive is the x64 one: its git
+# checkout is taken without its x64 bin/cache, and bin/cache comes from @cache@ instead, the
+# files Flutter's tool downloads on that host, fetched by Nix (see linux-arm64-cache.nix).
+#
 # Usage: launcher <flutter|dart> [arguments...]
 #        launcher root    (unpack if needed and print the SDK root, for FLUTTER_ROOT)
 set -euo pipefail
@@ -14,9 +18,13 @@ tool=$1
 shift
 version='@version@'
 archive='@archive@'
+cache='@cache@'
+tool_config='@toolConfig@'
 home=${FLUTTER_OVERLAY_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/flutter-overlay}
-# The archive's store hash names the copy, so another platform or archive never reuses it.
-id=${archive##*/}
+# The archive's store hash names the copy, so another platform or archive never reuses it. Where
+# bin/cache comes from Nix, its store hash names the copy instead, since the archive is shared.
+id=${cache:-$archive}
+id=${id##*/}
 root=$home/$version-${id:0:12}
 marker=$root/.flutter-overlay-unpacked
 
@@ -48,8 +56,14 @@ if [ ! -e "$marker" ]; then
     trap 'rm -rf "$scratch"' EXIT
     case $archive in
       *.zip) '@unzip@' -q "$archive" -d "$scratch" ;;
-      *) '@xz@' -dc "$archive" | '@tar@' -x -C "$scratch" ;;
+      *) '@xz@' -dc "$archive" | '@tar@' -x -C "$scratch" ${cache:+--exclude=flutter/bin/cache} ;;
     esac
+    if [ -n "$cache" ]; then
+      cp -R "$cache" "$scratch/flutter/bin/cache"
+      rm -rf "$scratch/flutter/packages/flutter_tools/.dart_tool"
+      cp -R "$tool_config" "$scratch/flutter/packages/flutter_tools/.dart_tool"
+      chmod -R u+w "$scratch/flutter/bin/cache" "$scratch/flutter/packages/flutter_tools/.dart_tool"
+    fi
     mv "$scratch/flutter" "$root"
     touch "$marker"
     rm -rf "$scratch"

@@ -14,6 +14,23 @@ nix build ".#$channel" --out-link "$work/flutter"
 export PATH="$work/flutter/bin:$PATH"
 # A fresh SDK home, so the first run unpacks the archive.
 export FLUTTER_OVERLAY_HOME="$work/sdk"
+
+# On aarch64 Linux, Nix provides everything Flutter's tool would download for its bin/cache and
+# its own build, so the first run works without a network and the tool finds nothing to update.
+# (Its daily check for a newer Flutter, a `git fetch`, fails there; upstream treats it as best effort.)
+if [[ $(uname -s) == Linux && $(uname -m) == aarch64 ]]; then
+  offline() {
+    sudo unshare --net -- sudo -u "$USER" env PATH="$PATH" HOME="$HOME" \
+      FLUTTER_OVERLAY_HOME="$FLUTTER_OVERLAY_HOME" "$@"
+  }
+  offline flutter --version 2>&1 | tee "$work/offline.log"
+  offline flutter precache --linux --web 2>&1 | tee -a "$work/offline.log"
+  # The tool's own download and rebuild messages.
+  if grep -E 'Building flutter tool|Downloading .*Dart SDK|\[ *[0-9]+/[0-9]+\]' "$work/offline.log"; then
+    echo "the first run on aarch64 Linux downloaded or rebuilt something" >&2
+    exit 1
+  fi
+fi
 flutter --version
 
 # The version is pinned by Nix, so the launcher refuses to change it, flags or not.
@@ -48,14 +65,14 @@ fi
 # links on the library path, and newer engines link more. It runs until the timeout ends it (124);
 # a missing library ends it at once.
 if [[ $(uname) == Linux ]]; then
-  shell="(builtins.getFlake \"path:$root\").inputs.nixpkgs.legacyPackages.x86_64-linux.callPackage $root/.github/scripts/linux-desktop.nix { }"
+  shell="(builtins.getFlake \"path:$root\").inputs.nixpkgs.legacyPackages.\${builtins.currentSystem}.callPackage $root/.github/scripts/linux-desktop.nix { }"
   # shellcheck disable=SC2016
   nix develop --impure --expr "$shell" --command bash -c '
     set -euo pipefail
     eval "$1"
     flutter build linux --debug
     status=0
-    timeout 20 xvfb-run --auto-servernum build/linux/x64/debug/bundle/t || status=$?
+    timeout 20 xvfb-run --auto-servernum build/linux/*/debug/bundle/t || status=$?
     [[ $status == 124 ]] || { echo "the Linux app exited with $status instead of running" >&2; exit 1; }
   ' bash "$(nix eval --raw "$root#$channel.shellHook")"
 fi

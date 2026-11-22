@@ -13,23 +13,27 @@
   libepoxy,
   fontconfig,
   wayland,
+  callPackage,
   release,
 }:
 let
   inherit (release) version channel;
 
-  system = stdenvNoCC.hostPlatform.system;
-  source = release.archives.${system};
+  source = release.archives.${stdenvNoCC.hostPlatform.system};
   archive = fetchurl { inherit (source) url sha256; };
+
+  # aarch64 Linux takes the git checkout from the x64 archive and its bin/cache from here.
+  binCache = lib.optionalAttrs (source ? cache) (
+    callPackage ./linux-arm64-cache.nix { inherit version archive source; }
+  );
 
   launcher = replaceVarsWith {
     src = ./launcher.sh;
     isExecutable = true;
     replacements = {
       inherit version archive;
-      # Set for a system that uses another system's archive (see BORROWED in the updater): the
-      # launcher drops the archive's bin/cache so Flutter downloads it for this host.
-      refetchCache = lib.optionalString (source.refetchCache or false) system;
+      cache = binCache.out or "";
+      toolConfig = binCache.tool or "";
       bash = lib.getExe bash;
       flock = lib.getExe flock;
       unzip = lib.getExe unzip;
@@ -65,6 +69,7 @@ stdenvNoCC.mkDerivation {
   '';
   passthru = {
     inherit channel archive;
+    ${if source ? cache then "binCache" else null} = binCache;
     # Unpacks the SDK if needed and exports FLUTTER_ROOT, for IDEs and tools that look for the
     # SDK there, and on Linux puts the engine's libraries on the library path for the apps the
     # shell builds. Use it as a mkShell `shellHook` or a devenv `enterShell`.

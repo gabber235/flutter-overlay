@@ -41,8 +41,8 @@ decided:
   - id: linux-scope
     what: macOS, x86_64 Linux and aarch64 Linux. x86_64-darwin is out (pinned nixpkgs dropped it).
   - id: aarch64-linux
-    what: aarch64 Linux uses the x64 Linux archive without bin/cache, the git checkout of the release Flutter documents for ARM Linux hosts; Flutter downloads its arm64 Dart SDK and engine artifacts on first run. No Flutter file changes.
-    why: Flutter ships no aarch64 Linux archive, and a consumer (Winston CI) runs on ARM Linux because its Rust dependencies fail on Intel.
+    what: aarch64 Linux takes the git checkout from the x64 Linux archive; Nix builds bin/cache from the arm64 Dart SDK and linux-arm64 engine files Google publishes for the release's engine (pinned by sha256, laid out and stamped as the tool does) and the tool snapshot from the archive's locked packages, so the first run downloads nothing. No Flutter file changes.
+    why: Flutter ships no aarch64 Linux archive, and a consumer (Winston CI) runs on ARM Linux because its Rust dependencies fail on Intel. The owner rejected dropping bin/cache and letting Flutter download it on first run as a patch.
   - id: linux-nix-ld
     what: "Drop wrapper, nix-ld. Replaces the earlier FHS wrapper choice."
     why: Review evidence that the wrapper misses IDEs and hides the Ubuntu host toolchain.

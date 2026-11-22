@@ -111,8 +111,14 @@ artifacts into that copy as usual.
 
 ## Outputs
 
-Systems: `aarch64-darwin`, `x86_64-linux`. Flutter publishes no archive for aarch64 Linux, and
-nixpkgs no longer supports x86_64-darwin.
+Systems: `aarch64-darwin`, `x86_64-linux`, `aarch64-linux`. nixpkgs no longer supports
+x86_64-darwin.
+
+Flutter publishes no archive for aarch64 Linux; it supports that host from a git checkout of the
+release. The x64 Linux archive is that git checkout plus `bin/cache`, the Dart SDK and engine
+artifacts downloaded for x64. So on aarch64 Linux the launcher unpacks the x64 archive without
+`bin/cache`, and the first `flutter` run downloads the arm64 Dart SDK and engine artifacts from
+Flutter's own storage, exactly as after a `git clone`. No file of Flutter changes.
 
 | Output | Contents |
 | --- | --- |
@@ -154,7 +160,7 @@ The `Update` workflow runs every 12 hours and on demand:
    GitHub holds for pull requests opened by a workflow, and enables auto merge.
 4. The same workflow bumps the pinned nixpkgs in its own pull request (`update/nixpkgs`).
 
-CI runs on Linux (`ubuntu-latest`) and macOS (`macos-latest`, Apple silicon). For both channels it
+CI runs on Linux (`ubuntu-latest` and `ubuntu-24.04-arm`) and macOS (`macos-latest`, Apple silicon). For both channels it
 unpacks a fresh SDK, checks the shell hook and the pinned version guard, creates a project, runs
 `flutter test` and `flutter build web` (plus `flutter build macos --debug` on macOS, and on Linux
 `flutter build linux --debug` with a check that the app starts), and generates

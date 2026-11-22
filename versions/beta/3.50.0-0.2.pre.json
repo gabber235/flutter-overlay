@@ -9,6 +9,11 @@
     "x86_64-linux": {
       "url": "https://storage.googleapis.com/flutter_infra_release/releases/beta/linux/flutter_linux_3.50.0-0.2.pre-beta.tar.xz",
       "sha256": "6516ae185eb8b245bd10fb70197cc77dbdfa0ad084e33ce16fd6a83ca8b013ce"
+    },
+    "aarch64-linux": {
+      "url": "https://storage.googleapis.com/flutter_infra_release/releases/beta/linux/flutter_linux_3.50.0-0.2.pre-beta.tar.xz",
+      "sha256": "6516ae185eb8b245bd10fb70197cc77dbdfa0ad084e33ce16fd6a83ca8b013ce",
+      "refetchCache": true
     }
   }
 }

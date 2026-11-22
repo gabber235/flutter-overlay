@@ -18,13 +18,18 @@
 let
   inherit (release) version channel;
 
-  archive = fetchurl { inherit (release.archives.${stdenvNoCC.hostPlatform.system}) url sha256; };
+  system = stdenvNoCC.hostPlatform.system;
+  source = release.archives.${system};
+  archive = fetchurl { inherit (source) url sha256; };
 
   launcher = replaceVarsWith {
     src = ./launcher.sh;
     isExecutable = true;
     replacements = {
       inherit version archive;
+      # Set for a system that uses another system's archive (see BORROWED in the updater): the
+      # launcher drops the archive's bin/cache so Flutter downloads it for this host.
+      refetchCache = lib.optionalString (source.refetchCache or false) system;
       bash = lib.getExe bash;
       flock = lib.getExe flock;
       unzip = lib.getExe unzip;

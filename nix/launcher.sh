@@ -6,6 +6,10 @@
 # $FLUTTER_OVERLAY_HOME/<version>-<archive id> (default ~/.cache/flutter-overlay) and from then
 # on runs `flutter` or `dart` from there, exactly like a manual install.
 #
+# A system Flutter publishes no archive for (aarch64 Linux) uses the x64 Linux archive without
+# its bin/cache: that leaves the git checkout of the release Flutter documents for such hosts, and
+# Flutter's first run downloads the Dart SDK and engine artifacts for this host into bin/cache.
+#
 # Usage: launcher <flutter|dart> [arguments...]
 #        launcher root    (unpack if needed and print the SDK root, for FLUTTER_ROOT)
 set -euo pipefail
@@ -14,10 +18,12 @@ tool=$1
 shift
 version='@version@'
 archive='@archive@'
+refetch_cache='@refetchCache@'
 home=${FLUTTER_OVERLAY_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/flutter-overlay}
 # The archive's store hash names the copy, so another platform or archive never reuses it.
 id=${archive##*/}
-root=$home/$version-${id:0:12}
+# The same archive serves another system when bin/cache is refetched, so that copy names it.
+root=$home/$version-${id:0:12}${refetch_cache:+-$refetch_cache}
 marker=$root/.flutter-overlay-unpacked
 
 # The version is pinned by Nix; changing it inside the copy would make the two disagree.
@@ -50,6 +56,7 @@ if [ ! -e "$marker" ]; then
       *.zip) '@unzip@' -q "$archive" -d "$scratch" ;;
       *) '@xz@' -dc "$archive" | '@tar@' -x -C "$scratch" ;;
     esac
+    [ -z "$refetch_cache" ] || rm -rf "$scratch/flutter/bin/cache"
     mv "$scratch/flutter" "$root"
     touch "$marker"
     rm -rf "$scratch"

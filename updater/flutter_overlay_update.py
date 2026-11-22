@@ -25,12 +25,18 @@ from pathlib import Path
 MANIFEST_URL = "https://storage.googleapis.com/flutter_infra_release/releases/releases_{os}.json"
 
 # Manifests to read, and the Nix system each (os, dart_sdk_arch) archive runs on. Every release
-# needs all of them. Flutter publishes no archive for aarch64 Linux, and nixpkgs dropped
-# x86_64-darwin.
+# needs all of them. nixpkgs dropped x86_64-darwin.
 SYSTEMS = {
     ("macos", "arm64"): "aarch64-darwin",
     ("linux", "x64"): "x86_64-linux",
 }
+
+# Systems Flutter publishes no archive for, and the system whose archive they use instead. A
+# Linux archive is a git checkout of the release plus bin/cache, the Dart SDK and engine
+# artifacts Flutter downloaded for the x64 host it was made on. Without bin/cache it is exactly
+# the git checkout Flutter documents for ARM Linux hosts, and Flutter's first run downloads that
+# cache again for the host it runs on. `refetchCache` tells the launcher to drop bin/cache.
+BORROWED = {"aarch64-linux": "x86_64-linux"}
 OPERATING_SYSTEMS = sorted({os for os, _ in SYSTEMS})
 
 # Channels that publish release archives. `dev` was retired in 2022 and `master` publishes none.
@@ -122,7 +128,9 @@ def release_of(manifests: dict[str, dict], channel: str, version: str) -> dict:
     missing = sorted(set(SYSTEMS.values()) - set(archives))
     if missing:
         raise SystemExit(f"{channel} {version} has no archive for {', '.join(missing)} yet")
-    order = list(SYSTEMS.values())
+    for system, source in BORROWED.items():
+        archives[system] = {**archives[source], "refetchCache": True}
+    order = [*SYSTEMS.values(), *BORROWED]
     return {
         "version": version,
         "channel": channel,

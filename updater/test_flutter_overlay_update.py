@@ -88,6 +88,12 @@ class ReleaseOfTest(unittest.TestCase):
                         "url": f"{BASE_URL}/stable/linux/flutter_linux_3.50.0-stable.tar.xz",
                         "sha256": "d" * 64,
                     },
+                    # No ARM Linux archive exists: the x64 one, with Flutter's cache refetched.
+                    "aarch64-linux": {
+                        "url": f"{BASE_URL}/stable/linux/flutter_linux_3.50.0-stable.tar.xz",
+                        "sha256": "d" * 64,
+                        "refetchCache": True,
+                    },
                 },
             },
         )

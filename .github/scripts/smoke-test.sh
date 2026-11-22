@@ -48,14 +48,14 @@ fi
 # links on the library path, and newer engines link more. It runs until the timeout ends it (124);
 # a missing library ends it at once.
 if [[ $(uname) == Linux ]]; then
-  shell="(builtins.getFlake \"path:$root\").inputs.nixpkgs.legacyPackages.x86_64-linux.callPackage $root/.github/scripts/linux-desktop.nix { }"
+  shell="(builtins.getFlake \"path:$root\").inputs.nixpkgs.legacyPackages.\${builtins.currentSystem}.callPackage $root/.github/scripts/linux-desktop.nix { }"
   # shellcheck disable=SC2016
   nix develop --impure --expr "$shell" --command bash -c '
     set -euo pipefail
     eval "$1"
     flutter build linux --debug
     status=0
-    timeout 20 xvfb-run --auto-servernum build/linux/x64/debug/bundle/t || status=$?
+    timeout 20 xvfb-run --auto-servernum build/linux/*/debug/bundle/t || status=$?
     [[ $status == 124 ]] || { echo "the Linux app exited with $status instead of running" >&2; exit 1; }
   ' bash "$(nix eval --raw "$root#$channel.shellHook")"
 fi
